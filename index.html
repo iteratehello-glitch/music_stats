@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BitChord Pulse — Luxury Apple Music Observatory</title>
+  <meta name="description" content="Native Apple Music visionOS/macOS Liquid Glass music observatory for BitChord backups." />
+
+  <!-- Fonts & Stylesheet -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!-- External High-Performance Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+
+  <!-- Ambient Blurred Crimson/Rose Mesh -->
+  <div class="ambient-mesh">
+    <div class="mesh-blob-1"></div>
+    <div class="mesh-blob-2"></div>
+  </div>
+
+  <!-- Hidden File Input for Backup Upload -->
+  <input type="file" id="global-file-input" accept=".json" class="hidden" />
+
+  <!-- Floating GitHub Heatmap Tooltip -->
+  <div class="gh-floating-tooltip" id="gh-tooltip"></div>
+
+  <!-- App Shell -->
+  <div class="app-shell" id="app-shell-root">
+
+    <!-- Desktop Left Glass Sidebar (>= 768px, 220px wide) -->
+    <aside class="glass-sidebar">
+      <div>
+        <div class="sidebar-header">
+          <div class="sidebar-brand-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+            </svg>
+          </div>
+          <div>
+            <div class="sidebar-brand-name">BitChord Pulse</div>
+            <div class="sidebar-brand-sub">Replay Studio</div>
+          </div>
+        </div>
+
+        <!-- 5 Tab Navigation Items -->
+        <nav class="sidebar-nav-group">
+          <button class="nav-tab-btn active" data-tab="listen-now">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+            <span>Listen Now</span>
+          </button>
+
+          <button class="nav-tab-btn" data-tab="time-rhythm">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Time & Rhythm</span>
+          </button>
+
+          <button class="nav-tab-btn" data-tab="artists">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>Artists</span>
+          </button>
+
+          <button class="nav-tab-btn" data-tab="songs-albums">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Songs & Albums</span>
+          </button>
+
+          <button class="nav-tab-btn" data-tab="dna-rig">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <span>DNA & Audio Rig</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Sidebar Footer -->
+      <div class="sidebar-footer">
+        <div class="sidebar-status-pill">
+          <span class="status-dot-crimson"></span>
+          <span id="sidebar-watermark-text">Checking watermark...</span>
+        </div>
+
+        <button class="btn-sidebar-replay" id="btn-sidebar-replay" title="Experience BitChord Wrapped 2026 Story">
+          <span>✨ Replay '26 Story</span>
+        </button>
+
+        <button class="btn-sidebar-secondary" id="btn-sidebar-update">
+          <span>+ Update Backup</span>
+        </button>
+
+        <button class="btn-sidebar-secondary" id="btn-sidebar-db">
+          <span>Database & Export</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Mobile Bottom Glass Tab Bar (< 768px) -->
+    <nav class="mobile-bottom-tabbar">
+      <button class="mobile-tab-btn active" data-tab="listen-now">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+        <span>Listen Now</span>
+      </button>
+
+      <button class="mobile-tab-btn" data-tab="time-rhythm">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Rhythm</span>
+      </button>
+
+      <button class="mobile-tab-btn" data-tab="artists">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Artists</span>
+      </button>
+
+      <button class="mobile-tab-btn" data-tab="songs-albums">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Library</span>
+      </button>
+
+      <button class="mobile-tab-btn" data-tab="dna-rig">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>
+        <span>DNA</span>
+      </button>
+    </nav>
+
+    <!-- Main Viewport Area -->
+    <main class="main-viewport">
+
+      <!-- Persistent Sticky Top Header -->
+      <header class="persistent-header">
+        <div class="header-content-wrap">
+          <h1 class="header-title-heading" id="header-tab-title">Listen Now</h1>
+
+          <div class="header-actions-right">
+            <!-- Time Segmented Pill -->
+            <div class="time-segmented-pill">
+              <button class="time-pill-btn active" data-timeframe="all">All Time</button>
+              <button class="time-pill-btn" data-timeframe="thisMonth">This Month</button>
+              <button class="time-pill-btn" data-timeframe="thisWeek">This Week</button>
+            </div>
+
+            <div class="header-synced-pill" id="header-synced-pill">Synced: Today</div>
+
+            <button class="btn-header-update" id="btn-header-update">
+              <span>+ Update Backup</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Empty State Hero (If DB is empty) -->
+      <div class="empty-state-card glass-container hidden" id="initial-empty-dropzone">
+        <div style="font-size: 44px; margin-bottom: 14px;">🌌</div>
+        <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">Welcome to BitChord Pulse</h2>
+        <p style="color: var(--text-secondary); font-size: 14px; max-width: 440px; margin: 0 auto 24px; line-height: 1.5;">
+          A native Apple Music Liquid Glass observatory for your raw <code>bitchord-backup-*.json</code> files.
+        </p>
+        <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
+          <button class="btn-header-update" onclick="document.getElementById('global-file-input').click()" style="padding:10px 24px;">
+            <span>Select bitchord-backup.json</span>
+          </button>
+          <span style="font-size:12px; color:var(--text-tertiary);">OR</span>
+          <button class="btn-sidebar-secondary btn-load-demo-backup" style="width:auto; padding:8px 20px;">
+            <span>⚡ Load Built-in Demo Backup</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Viewport Container -->
+      <div class="tab-viewport-container" id="main-tab-content-area">
+
+        <!-- ==========================================================================
+             TAB 1: Listen Now (3-Mode Master Switcher: All-Time | Monthly | Daily)
+             ========================================================================== -->
+        <section class="app-tab-panel active" id="tab-listen-now">
+          
+          <!-- Apple Music-Style 3-Mode Master Switcher Bar -->
+          <div class="glass-container master-mode-nav-bar">
+            <div class="master-mode-flex-row">
+              <div class="master-mode-segmented-pill" id="ln-master-mode-switcher">
+                <button class="master-pill-btn active" data-mode="all-time">All-Time</button>
+                <button class="master-pill-btn" data-mode="monthly">Monthly</button>
+                <button class="master-pill-btn" data-mode="daily">Daily</button>
+              </div>
+              <div class="master-mode-meta-badge" id="master-mode-meta-badge">
+                All-Time Observatory • Full Archive
+              </div>
+            </div>
+          </div>
+
+          <!-- ====================================================================
+               MODE A: ALL-TIME OBSERVATORY VIEW
+               ==================================================================== -->
+          <div class="mode-view-panel" id="ln-view-alltime">
+            <!-- Vinyl Record Player & Ambient Aura Showcase Card -->
+            <div class="glass-container vinyl-hero-container">
+              <div class="vinyl-hero-wrap">
+                <div class="vinyl-sleeve-stage">
+                  <!-- Realistic Spinning Vinyl Disc -->
+                  <div class="vinyl-record-disc" id="alltime-vinyl-disc">
+                    <div class="vinyl-record-grooves"></div>
+                    <div class="vinyl-center-label">
+                      <div class="vinyl-spindle-hole"></div>
+                      <span class="vinyl-label-text">BITCHORD</span>
+                    </div>
+                  </div>
+                  <!-- Album Jacket Cover -->
+                  <div class="vinyl-jacket-cover" id="alltime-vinyl-jacket">
+                    <img id="alltime-vinyl-art" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400" alt="Top Anthem Art" />
+                    <div class="vinyl-jacket-overlay">
+                      <button class="vinyl-play-trigger" id="alltime-vinyl-play-btn" title="Play 30s Audio Preview">▶</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="vinyl-hero-meta">
+                  <div class="vinyl-badge-row">
+                    <span class="hero-tag">#1 ALL-TIME ANTHEM</span>
+                    <!-- Animated 5-Bar Audio Waveform Equalizer -->
+                    <div class="animated-audio-waveform" id="vinyl-eq-waveform">
+                      <span class="eq-bar bar-1"></span>
+                      <span class="eq-bar bar-2"></span>
+                      <span class="eq-bar bar-3"></span>
+                      <span class="eq-bar bar-4"></span>
+                      <span class="eq-bar bar-5"></span>
+                    </div>
+                  </div>
+                  <h2 class="vinyl-song-title" id="alltime-anthem-title">Song Title</h2>
+                  <div class="vinyl-song-artist" id="alltime-anthem-artist">Artist</div>
+                  <div class="vinyl-stats-pill" id="alltime-anthem-stats">0 hrs • 0 plays</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bento 6-Stat Glass Strip -->
+            <div class="glass-container clean-stat-strip bento-6-strip">
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">All-Time Listening</span>
+                <div class="stat-strip-num" id="stat-alltime-hours">0h 0m</div>
+                <span class="stat-strip-sub" id="stat-alltime-ms">0 hours tracked</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Completed Plays</span>
+                <div class="stat-strip-num" id="stat-alltime-plays">0</div>
+                <span class="stat-strip-sub" id="stat-alltime-partials">0 skips</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Distinct Songs</span>
+                <div class="stat-strip-num" id="stat-alltime-tracks">0</div>
+                <span class="stat-strip-sub" id="stat-alltime-albums">0 albums</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Unique Artists</span>
+                <div class="stat-strip-num" id="stat-alltime-artists">0</div>
+                <span class="stat-strip-sub">Creators in library</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Active Days Ratio</span>
+                <div class="stat-strip-num" id="stat-alltime-activedays">0 / 0</div>
+                <span class="stat-strip-sub" id="stat-alltime-ratio">0% consistency</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Active Streak</span>
+                <div class="stat-strip-num" id="stat-alltime-streak">0 Days</div>
+                <span class="stat-strip-sub" id="stat-alltime-longest">0 record</span>
+              </div>
+            </div>
+
+            <!-- All-Time Cumulative Growth & Daily Horizon Area Curve -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">All-Time Cumulative Growth & Daily Horizon</h3>
+                  <span class="section-card-sub">Daily listening hours with smooth spline curve</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="time-rhythm" title="View in Time & Rhythm Tab">
+                  <span>Rhythm Matrix</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="chart-responsive-box" style="height: 280px;">
+                <canvas id="chart-listen-now-daily"></canvas>
+              </div>
+            </div>
+
+            <!-- All-Time Top 3 Artists Podium Header & Cards -->
+            <div class="section-card-header" style="margin-top: 10px; margin-bottom: 14px;">
+              <div>
+                <h3 class="section-card-title">All-Time Top Artists</h3>
+                <span class="section-card-sub">Most listened creators across your archive</span>
+              </div>
+              <button class="btn-section-jump" data-target-tab="artists" title="View all artists and gravity constellation">
+                <span>Explore Artists & Orbit</span> <span class="jump-arrow">↗</span>
+              </button>
+            </div>
+            <div class="artists-podium-grid" id="alltime-artists-podium">
+              <!-- Rendered by app.js -->
+            </div>
+
+            <!-- 2-Column Split: On Repeat Top 5 Songs & Sonic Aura Radar -->
+            <div class="listen-now-split">
+              <!-- Left: On Repeat -->
+              <div class="glass-container">
+                <div class="section-card-header">
+                  <div>
+                    <h3 class="section-card-title">On Repeat All-Time</h3>
+                    <span class="section-card-sub">Most played anthems</span>
+                  </div>
+                  <button class="btn-section-jump" data-target-tab="songs-albums" title="Browse full library and tracks">
+                    <span>Full Library</span> <span class="jump-arrow">↗</span>
+                  </button>
+                </div>
+                <div class="on-repeat-list" id="on-repeat-tracks-list">
+                  <!-- Rendered by app.js -->
+                </div>
+              </div>
+
+              <!-- Right: Sonic Aura Radar (Mood Rose Chart) -->
+              <div class="glass-container">
+                <div class="section-card-header">
+                  <div>
+                    <h3 class="section-card-title">Sonic Aura & Mood Rose</h3>
+                    <span class="section-card-sub">5 Musical Worlds Balance</span>
+                  </div>
+                  <button class="btn-section-jump" data-target-tab="dna-rig" title="Inspect sonic DNA and audiophile rig">
+                    <span>Sonic DNA</span> <span class="jump-arrow">↗</span>
+                  </button>
+                </div>
+                <div class="chart-responsive-box" style="height: 280px;">
+                  <canvas id="chart-listen-now-sonic-radar"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Song Loyalty vs. Binge Matrix -->
+            <div class="glass-container" id="song-loyalty-binge-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Song Loyalty vs. Binge Matrix</h3>
+                  <span class="section-card-sub">Daily Rituals (consistent multi-day play) vs. Single-Day Obsessions (intense one-day binging)</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="songs-albums" title="Inspect library songs and consistent gems">
+                  <span>View All Songs</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="loyalty-binge-grid">
+                <div class="loyalty-col">
+                  <h4 class="loyalty-subheading">🌿 Daily Rituals (Multi-Day Consistency)</h4>
+                  <div class="loyalty-list" id="loyalty-rituals-list"></div>
+                </div>
+                <div class="loyalty-col">
+                  <h4 class="loyalty-subheading">⚡ Single-Day Obsessions (Concentrated Binges)</h4>
+                  <div class="loyalty-list" id="loyalty-obsessions-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ====================================================================
+               MODE B: MONTHLY BREAKDOWN VIEW
+               ==================================================================== -->
+          <div class="mode-view-panel hidden" id="ln-view-monthly">
+            <!-- Interactive Month Navigation Bar -->
+            <div class="glass-container time-navigator-bar">
+              <div class="month-stepper-wrap">
+                <button class="stepper-nav-btn" id="btn-ln-month-prev" title="Previous Month">❮</button>
+                <div class="months-pill-strip" id="ln-months-pill-strip"></div>
+                <button class="stepper-nav-btn" id="btn-ln-month-next" title="Next Month">❯</button>
+              </div>
+              <div class="month-indicator-pill" id="ln-month-indicator-pill">October 2026</div>
+            </div>
+
+            <!-- Month Summary Hero Strip -->
+            <div class="month-summary-strip" id="ln-month-summary-strip">
+              <div class="month-stat-box">
+                <span class="month-stat-lbl">Month Hours</span>
+                <span class="month-stat-val" id="ln-ms-summary-hours">0h</span>
+              </div>
+              <div class="month-stat-box">
+                <span class="month-stat-lbl">Daily vs Baseline</span>
+                <span class="month-stat-val" id="ln-ms-summary-split">0h / 0h</span>
+              </div>
+              <div class="month-stat-box">
+                <span class="month-stat-lbl">Daily Average</span>
+                <span class="month-stat-val" id="ln-ms-summary-avghours">0h / day</span>
+              </div>
+              <div class="month-stat-box">
+                <span class="month-stat-lbl">Total Plays</span>
+                <span class="month-stat-val" id="ln-ms-summary-plays">0 plays</span>
+              </div>
+            </div>
+
+            <!-- Month #1 Artist & Song Hero Row -->
+            <div class="hero-compact-grid">
+              <div class="glass-card hero-compact-card" id="ln-month-hero-artist">
+                <div class="hero-thumb-wrap">
+                  <img class="hero-thumb-img" id="ln-month-artist-img" src="" alt="Top Artist of Month" />
+                </div>
+                <div class="hero-meta-wrap">
+                  <span class="hero-tag">MONTH #1 ARTIST</span>
+                  <div class="hero-name-heading" id="ln-month-artist-name">Artist Name</div>
+                  <div class="hero-detail-sub" id="ln-month-artist-meta">0 hrs • 0 plays</div>
+                </div>
+              </div>
+
+              <div class="glass-card hero-compact-card" id="ln-month-hero-song">
+                <div class="hero-thumb-wrap">
+                  <img class="hero-thumb-img" id="ln-month-song-img" src="" alt="Top Song of Month" />
+                  <div class="hero-thumb-play" id="ln-month-song-play-btn" title="Play Preview">▶</div>
+                </div>
+                <div class="hero-meta-wrap">
+                  <span class="hero-tag">MONTH #1 SONG</span>
+                  <div class="hero-name-heading" id="ln-month-song-title">Song Title</div>
+                  <div class="hero-detail-sub" id="ln-month-song-meta">Artist • 0 plays</div>
+                </div>
+              </div>
+
+              <div class="glass-card hero-compact-card" id="ln-month-hero-album">
+                <div class="hero-thumb-wrap">
+                  <img class="hero-thumb-img" id="ln-month-album-img" src="" alt="Top Album of Month" />
+                </div>
+                <div class="hero-meta-wrap">
+                  <span class="hero-tag">MONTH #1 ALBUM</span>
+                  <div class="hero-name-heading" id="ln-month-album-title">Album Name</div>
+                  <div class="hero-detail-sub" id="ln-month-album-meta">0 hrs</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Day-by-Day Bar Chart for this Month (Clickable to jump into Day View) -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title" id="ln-month-daychart-title">Day-by-Day Listening (Click any bar to jump to Daily View)</h3>
+                  <span class="section-card-sub">Daily tracked listening in hours</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="time-rhythm" title="View in Time & Rhythm Tab">
+                  <span>Chrono Matrix</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="chart-responsive-box" style="height: 260px;">
+                <canvas id="chart-ln-monthly-days"></canvas>
+              </div>
+            </div>
+
+            <!-- Month Calendar (Cover Art View) -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Monthly Cover Art Calendar</h3>
+                  <span class="section-card-sub">Every active date displays your #1 anthem's artwork • Click any day to jump to Daily View</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="time-rhythm" title="Open full Time & Rhythm Calendar">
+                  <span>Full Calendar</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="month-calendar-cover-view" id="ln-month-cover-calendar">
+                <div class="cal-weekday-header-row">
+                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+                </div>
+                <div class="cal-month-days-grid" id="ln-cal-month-days-grid"></div>
+              </div>
+            </div>
+
+            <!-- Top Songs of Month Tracklist -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Top Songs of This Month</h3>
+                  <span class="section-card-sub">Ranked by total listening duration</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="songs-albums" title="Open library tracks">
+                  <span>Open Library</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="apple-tracklist-container" id="ln-month-top-songs-list"></div>
+            </div>
+          </div>
+
+          <!-- ====================================================================
+               MODE C: DAILY DEEP-DIVE VIEW
+               ==================================================================== -->
+          <div class="mode-view-panel hidden" id="ln-view-daily">
+            <!-- Interactive Day Picker Bar -->
+            <div class="glass-container day-navigator-bar">
+              <div class="day-stepper-left">
+                <button class="stepper-nav-btn" id="btn-ln-day-prev" title="Previous Day">❮</button>
+                <div class="daily-active-pills-strip" id="ln-daily-pills-strip">
+                  <!-- e.g. Oct 20 • 6.8h, Oct 21 • 5.9h, Oct 22 • 7.7h -->
+                </div>
+                <button class="stepper-nav-btn" id="btn-ln-day-next" title="Next Day">❯</button>
+              </div>
+              <div class="day-picker-right">
+                <input type="date" class="date-input-glass" id="ln-day-native-picker" />
+              </div>
+            </div>
+
+            <!-- Selected Day Hero KPI Strip -->
+            <div class="glass-container clean-stat-strip day-kpi-strip">
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Day Listening Time</span>
+                <div class="stat-strip-num" id="stat-day-total-time">0h 0m</div>
+                <span class="stat-strip-sub" id="stat-day-exact-seconds">0 seconds</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Plays On Day</span>
+                <div class="stat-strip-num" id="stat-day-total-plays">0</div>
+                <span class="stat-strip-sub">Completed plays</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Unique Songs</span>
+                <div class="stat-strip-num" id="stat-day-unique-songs">0</div>
+                <span class="stat-strip-sub">Distinct tracks</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Day's #1 Anthem</span>
+                <div class="stat-strip-num" style="font-size:18px;" id="stat-day-top-song-title">—</div>
+                <span class="stat-strip-sub" id="stat-day-top-song-meta">0 plays</span>
+              </div>
+              <div class="stat-strip-col">
+                <span class="stat-strip-label">Day's #1 Artist</span>
+                <div class="stat-strip-num" style="font-size:18px;" id="stat-day-top-artist-name">—</div>
+                <span class="stat-strip-sub" id="stat-day-top-artist-meta">0 mins</span>
+              </div>
+            </div>
+
+            <!-- 24-Hour Hourly Distribution Graph for That Day -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">24-Hour Hourly Activity for Selected Day</h3>
+                  <span class="section-card-sub" id="ln-day-chart-subtitle">Distribution from 00:00 to 23:00</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button class="btn-sidebar-secondary" id="btn-toggle-day-hourly-mode" style="width:auto; padding:5px 14px;">
+                    Mode: Exact + Circadian Projected
+                  </button>
+                  <button class="btn-section-jump" data-target-tab="time-rhythm" title="Inspect full Circadian Rhythm Clock">
+                    <span>Circadian Clock</span> <span class="jump-arrow">↗</span>
+                  </button>
+                </div>
+              </div>
+              <div class="chart-responsive-box" style="height: 250px;">
+                <canvas id="chart-ln-daily-hourly"></canvas>
+              </div>
+            </div>
+
+            <!-- Top Artists of the Day -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Top Artists of the Day</h3>
+                  <span class="section-card-sub">Share of this day's listening time</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="artists" title="View Artists tab">
+                  <span>Artists Orbit</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="day-artists-grid" id="ln-day-artists-grid">
+                <!-- Rendered by app.js -->
+              </div>
+            </div>
+
+            <!-- Complete Tracklist of the Day -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Complete Tracklist for This Day</h3>
+                  <span class="section-card-sub">Ranked by listening time on this date</span>
+                </div>
+                <button class="btn-section-jump" data-target-tab="songs-albums" title="Explore library">
+                  <span>Explore Library</span> <span class="jump-arrow">↗</span>
+                </button>
+              </div>
+              <div class="apple-tracklist-container" id="ln-day-tracklist-rows">
+                <!-- Rendered by app.js -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==========================================================================
+             TAB 2: Time & Rhythm (GitHub Contribution Matrix with Gradient Tiers & Legend)
+             ========================================================================== -->
+        <section class="app-tab-panel" id="tab-time-rhythm">
+          
+          <!-- Dedicated Time Navigator Bar at Top of Tab -->
+          <div class="glass-container time-navigator-bar">
+            <div class="month-stepper-wrap">
+              <button class="stepper-nav-btn" id="btn-month-prev" title="Previous Month">❮</button>
+              <div class="months-pill-strip" id="months-pill-strip"></div>
+              <button class="stepper-nav-btn" id="btn-month-next" title="Next Month">❯</button>
+            </div>
+
+            <div class="view-mode-pill-toggle" id="heatmap-view-toggle">
+              <button class="view-toggle-btn active" data-view="github">Year Matrix (GitHub Style)</button>
+              <button class="view-toggle-btn" data-view="month-cover">Month Calendar (Cover Art View)</button>
+            </div>
+          </div>
+
+          <!-- Month Summary Strip -->
+          <div class="month-summary-strip" id="month-summary-strip">
+            <div class="month-stat-box">
+              <span class="month-stat-lbl">Month Hours</span>
+              <span class="month-stat-val" id="ms-summary-hours">0h</span>
+            </div>
+            <div class="month-stat-box">
+              <span class="month-stat-lbl">Daily vs Baseline</span>
+              <span class="month-stat-val" id="ms-summary-split">0h / 0h</span>
+            </div>
+            <div class="month-stat-box">
+              <span class="month-stat-lbl">Top Song</span>
+              <span class="month-stat-val" id="ms-summary-song">—</span>
+            </div>
+            <div class="month-stat-box">
+              <span class="month-stat-lbl">Top Artist</span>
+              <span class="month-stat-val" id="ms-summary-artist">—</span>
+            </div>
+          </div>
+
+          <!-- Heatmap Main Display Card -->
+          <div class="glass-container">
+            <div class="section-card-header">
+              <div>
+                <h3 class="section-card-title" id="heatmap-display-title">Listening Contribution Matrix (2026)</h3>
+                <span class="section-card-sub" id="heatmap-display-subtitle">Hover squares for details or click any day to inspect full day records below</span>
+              </div>
+            </div>
+
+            <!-- View 1: Authentic 53-week x 7-day GitHub Contribution Matrix -->
+            <div class="github-heatmap-wrapper" id="github-heatmap-view">
+              <div class="github-matrix-container">
+                <div class="github-day-labels">
+                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+                </div>
+                <div class="github-grid-scrollable">
+                  <div class="github-month-labels-row" id="gh-month-labels"></div>
+                  <div class="github-squares-grid" id="gh-squares-grid"></div>
+                </div>
+              </div>
+              
+              <!-- Gradient Legend Bar -->
+              <div class="github-legend-bar">
+                <span class="legend-text">Less (0h)</span>
+                <div class="legend-squares-wrap">
+                  <span class="gh-cell" data-level="0" title="0 mins"></span>
+                  <span class="gh-cell" data-level="1" title="Tier 1"></span>
+                  <span class="gh-cell" data-level="2" title="Tier 2"></span>
+                  <span class="gh-cell" data-level="3" title="Tier 3"></span>
+                  <span class="gh-cell" data-level="4" title="Tier 4 (Peak)"></span>
+                </div>
+                <span class="legend-text" id="gh-legend-peak-label">More (Peak)</span>
+              </div>
+            </div>
+
+            <!-- View 2: Month Calendar (Cover Art View) -->
+            <div class="month-calendar-cover-view hidden" id="month-calendar-cover-view">
+              <div class="cal-weekday-header-row">
+                <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+              </div>
+              <div class="cal-month-days-grid" id="cal-month-days-grid"></div>
+            </div>
+
+            <!-- Rich Day Inspector Dashboard -->
+            <div class="day-inspector-section" id="day-inspector-section">
+              <div class="inspector-header-row">
+                <div>
+                  <div class="inspector-date-str" id="inspector-selected-date">Select a day in the matrix above</div>
+                  <div class="inspector-metrics-pill" id="inspector-selected-stats">0 mins • 0 plays</div>
+                </div>
+                <button class="btn-sidebar-secondary" id="btn-jump-to-daily-mode" style="width:auto; padding:6px 14px;">
+                  Open Full Daily Mode ↗
+                </button>
+              </div>
+
+              <!-- Day 24-hr Hourly Mini Curve inside inspector -->
+              <div style="margin-bottom: 16px;">
+                <span style="font-size:11.5px; font-weight:600; text-transform:uppercase; color:var(--text-tertiary); letter-spacing:0.06em; display:block; margin-bottom:8px;">
+                  Hourly Activity on This Day
+                </span>
+                <div class="chart-responsive-box" style="height: 140px;">
+                  <canvas id="chart-inspector-hourly"></canvas>
+                </div>
+              </div>
+
+              <span style="font-size:11.5px; font-weight:600; text-transform:uppercase; color:var(--text-tertiary); letter-spacing:0.06em; display:block; margin-bottom:8px;">
+                Songs Played on This Date
+              </span>
+              <div class="inspector-scroll-area" id="inspector-selected-tracks"></div>
+            </div>
+          </div>
+
+          <!-- Middle Row: 2-Column Grid (Circadian Curve & Weekly Rhythm Bars) -->
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:20px;">
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">24-Hour Circadian Rhythm</h3>
+                  <span class="section-card-sub">Hourly distribution for selected timeframe</span>
+                </div>
+                <span class="badge-circadian-peak" id="badge-circadian-peak">Night Owl</span>
+              </div>
+              <div class="chart-responsive-box" style="height: 220px;">
+                <canvas id="chart-circadian-curve"></canvas>
+              </div>
+            </div>
+
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Day of Week Rhythm</h3>
+                  <span class="section-card-sub">Monday through Sunday comparison</span>
+                </div>
+              </div>
+              <div class="chart-responsive-box" style="height: 220px;">
+                <canvas id="chart-weekly-bars"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Card: Monthly & Yearly Horizon -->
+          <div class="glass-container">
+            <div class="section-card-header">
+              <div>
+                <h3 class="section-card-title">Monthly & Yearly Horizon</h3>
+                <span class="section-card-sub">Trajectory across recorded months</span>
+              </div>
+              <button class="btn-sidebar-secondary" id="btn-toggle-month-metric" style="width:auto; padding:4px 12px;">
+                Metric: Hours
+              </button>
+            </div>
+            <div class="chart-responsive-box" style="height: 240px;">
+              <canvas id="chart-monthly-horizon"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==========================================================================
+             TAB 3: Artists (Podium, Constellation Canvas & Strict Capped Gallery)
+             ========================================================================== -->
+        <section class="app-tab-panel" id="tab-artists">
+          <!-- Artist Gravity Constellation Bubble Canvas -->
+          <div class="glass-container">
+            <div class="section-card-header">
+              <div>
+                <h3 class="section-card-title">Artist Gravity Constellation</h3>
+                <span class="section-card-sub">Interactive floating orbit of your top artists sized by total hours • Hover to inspect or click to slide out profile</span>
+              </div>
+            </div>
+            <div class="artist-constellation-wrap">
+              <canvas id="artist-constellation-canvas" style="width:100%; height:100%; display:block;"></canvas>
+            </div>
+          </div>
+
+          <!-- Top 3 Podium Cards -->
+          <div class="artists-podium-grid" id="artists-podium-cards">
+            <!-- Rendered by app.js -->
+          </div>
+
+          <!-- All Artists Gallery with strict 210px max-width cap -->
+          <div class="glass-container">
+            <div class="section-card-header">
+              <div>
+                <h3 class="section-card-title">All Artists</h3>
+                <span class="section-card-sub">Click any artist to slide out their library discography</span>
+              </div>
+            </div>
+            <div class="artists-gallery-grid" id="all-artists-gallery">
+              <!-- Rendered by app.js -->
+            </div>
+          </div>
+        </section>
+
+        <!-- ==========================================================================
+             TAB 4: Songs & Albums / Library (Working 4 Subtabs, Search, Sort & Filters)
+             ========================================================================== -->
+        <section class="app-tab-panel" id="tab-songs-albums">
+          
+          <!-- Library Navigation & Filter Center -->
+          <div class="glass-container library-control-center">
+            <!-- 4-Segment Subtab Switcher -->
+            <div class="time-segmented-pill" id="library-view-switcher" style="margin-bottom: 12px;">
+              <button class="time-pill-btn active" data-subtab="all-songs">Songs (All Tracks)</button>
+              <button class="time-pill-btn" data-subtab="albums">Albums (Grouped)</button>
+              <button class="time-pill-btn" data-subtab="consistent">Consistent Gems</button>
+              <button class="time-pill-btn" data-subtab="skipped">Skipped / Partial</button>
+            </div>
+
+            <!-- Live Search & Sort Row -->
+            <div class="library-toolbar-row">
+              <div class="library-search-box">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="library-search-input" placeholder="Search by song, artist, or album..." />
+                <button id="library-search-clear" class="btn-clear-search hidden">✕</button>
+              </div>
+
+              <div class="library-sort-wrap">
+                <label for="library-sort-select" class="sort-label">Sort:</label>
+                <select id="library-sort-select" class="sort-select-glass">
+                  <option value="hours-desc">Most Listened (Hours)</option>
+                  <option value="plays-desc">Most Played (Plays)</option>
+                  <option value="days-desc">Most Consistent (Days)</option>
+                  <option value="recent-desc">Recently Played</option>
+                  <option value="title-asc">Alphabetical (A–Z)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Sonic World Filter Pills -->
+            <div class="library-world-pills-row" id="library-world-pills">
+              <button class="world-filter-pill active" data-world="all">All Genres</button>
+              <button class="world-filter-pill" data-world="Indian Melodies & Indie">Indian Melodies</button>
+              <button class="world-filter-pill" data-world="J-Pop, Anime & Vocaloid">J-Pop & Anime</button>
+              <button class="world-filter-pill" data-world="Western Indie & Pop">Western Indie</button>
+              <button class="world-filter-pill" data-world="Game Soundtracks">Game OST</button>
+              <button class="world-filter-pill" data-world="Classical & Orchestral">Classical</button>
+            </div>
+
+            <div class="library-results-counter" id="library-results-counter">
+              Showing 0 songs
+            </div>
+          </div>
+
+          <!-- Subtab 1: Songs Tracklist Table -->
+          <div class="glass-container" id="view-library-songs">
+            <div class="apple-tracklist-container" id="library-songs-rows"></div>
+          </div>
+
+          <!-- Subtab 2: Albums Grid -->
+          <div class="glass-container hidden" id="view-library-albums">
+            <div class="albums-art-grid" id="library-albums-grid"></div>
+          </div>
+
+          <!-- Subtab 3: Consistent Gems -->
+          <div class="glass-container hidden" id="view-library-consistent">
+            <div class="apple-tracklist-container" id="library-consistent-rows"></div>
+          </div>
+
+          <!-- Subtab 4: Skipped / Partial Listens -->
+          <div class="glass-container hidden" id="view-library-skipped">
+            <div class="apple-tracklist-container" id="library-skipped-rows"></div>
+          </div>
+        </section>
+
+        <!-- ==========================================================================
+             TAB 5: DNA & Audio Rig (Sonic Worlds, EQ & Search Strip)
+             ========================================================================== -->
+        <section class="app-tab-panel" id="tab-dna-rig">
+          <div class="dna-split-grid">
+            <!-- Left: Sonic Worlds -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Sonic Worlds</h3>
+                  <span class="section-card-sub">Cultural & genre clusters</span>
+                </div>
+              </div>
+              <div style="position: relative; width: 100%; height: 240px;">
+                <canvas id="chart-sonic-worlds"></canvas>
+              </div>
+              <div id="sonic-worlds-breakdown-list" style="margin-top:16px; display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+
+            <!-- Right: Audiophile Signal Chain & EQ -->
+            <div class="glass-container">
+              <div class="section-card-header">
+                <div>
+                  <h3 class="section-card-title">Audiophile Signal Chain</h3>
+                  <span class="section-card-sub">Hardware & Equalizer processing</span>
+                </div>
+              </div>
+
+              <!-- Badges -->
+              <div class="audio-badges-row">
+                <span class="audio-chip-pill active">LOSSLESS Wi-Fi</span>
+                <span class="audio-chip-pill active">32-Bit Float PCM</span>
+                <span class="audio-chip-pill active">Dolby Atmos</span>
+                <span class="audio-chip-pill active">Spatial Audio</span>
+                <span class="audio-chip-pill">-200ms Lyrics Offset</span>
+                <span class="audio-chip-pill">1.5 GB Cache</span>
+              </div>
+
+              <div style="position: relative; width: 100%; height: 180px;">
+                <canvas id="chart-audiophile-eq"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Recent Search Discovery Strip -->
+          <div class="glass-container" style="margin-top: 4px;">
+            <div class="section-card-header">
+              <div>
+                <h3 class="section-card-title">Search & Discovery History</h3>
+                <span class="section-card-sub">Captured search items from your BitChord ledger</span>
+              </div>
+            </div>
+            <div class="search-discovery-carousel" id="search-discovery-carousel">
+              <!-- Rendered by app.js -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Artist Slide-Over Drawer (Desktop: Right drawer, Mobile: Bottom sheet) -->
+  <aside class="slide-over-drawer hidden" id="artist-slide-drawer">
+    <div class="drawer-top-row">
+      <span style="font-size:11px; font-weight:700; color:var(--accent-crimson); text-transform:uppercase; letter-spacing:0.1em;">
+        ARTIST DOSSIER
+      </span>
+      <button class="drawer-close-btn" id="drawer-artist-close">✕</button>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px;">
+      <img id="drawer-artist-portrait" style="width:72px; height:72px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.1);" src="" alt="" />
+      <div>
+        <h2 id="drawer-artist-name" style="font-size:20px; font-weight:700; color:#fff;">Artist Name</h2>
+        <div id="drawer-artist-stats" style="font-size:12.5px; color:var(--text-secondary); margin-top:3px;">0 hrs • 0 plays</div>
+      </div>
+    </div>
+
+    <h4 style="font-size:11.5px; font-weight:600; text-transform:uppercase; color:var(--text-tertiary); letter-spacing:0.06em; margin-bottom:12px;">
+      Songs in Library
+    </h4>
+    <div id="drawer-artist-tracklist" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </aside>
+
+  <!-- Celebratory Sync Diff Modal -->
+  <div class="modal-overlay hidden" id="sync-diff-modal">
+    <div class="modal-glass-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div>
+          <span style="font-size:11px; font-weight:700; color:var(--accent-crimson); text-transform:uppercase; letter-spacing:0.1em;">
+            INCREMENTAL SYNC COMPLETE
+          </span>
+          <h2 style="font-size:20px; font-weight:700; color:#fff; margin-top:2px;">Library Updated</h2>
+        </div>
+        <button class="drawer-close-btn modal-close-trigger">✕</button>
+      </div>
+
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px;">
+        Merged <strong id="diff-modal-filename" style="color:#fff;">backup.json</strong> without double-counting!
+      </p>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:12px; padding:12px;">
+          <div style="font-size:22px; font-weight:800; color:var(--accent-crimson);" id="diff-modal-time">+0m</div>
+          <div style="font-size:11px; color:var(--text-tertiary);">Added Time</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:12px; padding:12px;">
+          <div style="font-size:22px; font-weight:800; color:#fff;" id="diff-modal-plays">+0</div>
+          <div style="font-size:11px; color:var(--text-tertiary);">Added Plays</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:12px; padding:12px;">
+          <div style="font-size:22px; font-weight:800; color:var(--accent-rose);" id="diff-modal-newtracks">+0</div>
+          <div style="font-size:11px; color:var(--text-tertiary);">New Songs</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:12px; padding:12px;">
+          <div style="font-size:22px; font-weight:800; color:#fff;" id="diff-modal-totalhours">0h</div>
+          <div style="font-size:11px; color:var(--text-tertiary);">Total Hours</div>
+        </div>
+      </div>
+
+      <button class="btn-header-update modal-close-trigger" style="width:100%; justify-content:center; padding:11px;">
+        <span>Done</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Database & Export Modal -->
+  <div class="modal-overlay hidden" id="database-manager-modal">
+    <div class="modal-glass-card" style="max-width:580px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div>
+          <span style="font-size:11px; font-weight:700; color:var(--accent-crimson); text-transform:uppercase; letter-spacing:0.1em;">
+            INDEXEDDB STORAGE ENGINE
+          </span>
+          <h2 style="font-size:20px; font-weight:700; color:#fff; margin-top:2px;">Manage Database</h2>
+        </div>
+        <button class="drawer-close-btn modal-close-trigger">✕</button>
+      </div>
+
+      <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:14px;">
+        Your music observatory runs 100% inside your browser. Here is your upload sync ledger:
+      </p>
+
+      <div style="max-height:180px; overflow-y:auto; border:1px solid var(--border-glass); border-radius:12px; margin-bottom:18px;">
+        <table style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-glass); color:var(--text-tertiary);">
+              <th style="padding:8px 12px;">Date</th>
+              <th style="padding:8px 12px;">File</th>
+              <th style="padding:8px 12px;">Δ Time</th>
+              <th style="padding:8px 12px;">Δ Plays</th>
+              <th style="padding:8px 12px;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="db-history-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn-header-update" id="btn-export-master-json" style="flex:1; justify-content:center;">
+          Export Master JSON
+        </button>
+        <button class="btn-sidebar-secondary" id="btn-reset-database" style="color:#ef4444; border-color:rgba(239,68,68,0.3);">
+          Reset DB
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Song Deep-Dive Modal / Bottom Sheet -->
+  <div class="modal-overlay hidden" id="song-deepdive-modal">
+    <div class="modal-glass-card song-deepdive-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <span style="font-size:11px; font-weight:700; color:var(--accent-crimson); text-transform:uppercase; letter-spacing:0.1em;">
+          SONG DOSSIER
+        </span>
+        <button class="drawer-close-btn modal-close-trigger">✕</button>
+      </div>
+
+      <div class="song-deepdive-header">
+        <div class="song-deepdive-art-wrap">
+          <img id="deepdive-song-art" src="" alt="Album Art" />
+          <button class="deepdive-play-btn" id="deepdive-play-trigger">▶</button>
+        </div>
+        <div class="song-deepdive-meta">
+          <h2 id="deepdive-song-title" class="deepdive-title">Song Title</h2>
+          <div id="deepdive-song-artist" class="deepdive-artist">Artist</div>
+          <div id="deepdive-song-album" class="deepdive-album">Album</div>
+          <div class="deepdive-stats-chips">
+            <span class="deepdive-chip" id="deepdive-chip-hours">0h 0m</span>
+            <span class="deepdive-chip" id="deepdive-chip-plays">0 plays</span>
+            <span class="deepdive-chip" id="deepdive-chip-days">0 active days</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily Play History Mini Chart -->
+      <div style="margin: 18px 0 14px;">
+        <span style="font-size:11.5px; font-weight:600; text-transform:uppercase; color:var(--text-tertiary); letter-spacing:0.06em; display:block; margin-bottom:8px;">
+          Daily Listening History (Minutes / Day)
+        </span>
+        <div class="chart-responsive-box" style="height: 140px;">
+          <canvas id="chart-deepdive-daily-history"></canvas>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button class="btn-header-update" id="deepdive-listen-now-btn" style="flex:1; justify-content:center;">
+          <span>▶ Play Audio Preview</span>
+        </button>
+        <button class="btn-sidebar-secondary" id="deepdive-youtube-btn" style="width:auto; padding:8px 18px;">
+          <span>Watch on YouTube ↗</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Album Deep-Dive Modal -->
+  <div class="modal-overlay hidden" id="album-deepdive-modal">
+    <div class="modal-glass-card" style="max-width: 580px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <span style="font-size:11px; font-weight:700; color:var(--accent-crimson); text-transform:uppercase; letter-spacing:0.1em;">
+          ALBUM TRACKLIST
+        </span>
+        <button class="drawer-close-btn modal-close-trigger">✕</button>
+      </div>
+
+      <div style="display:flex; gap:16px; align-items:center; margin-bottom:18px;">
+        <img id="album-deepdive-art" style="width:80px; height:80px; border-radius:14px; object-fit:cover; box-shadow:0 6px 18px rgba(0,0,0,0.5);" src="" alt="" />
+        <div style="flex:1; min-width:0;">
+          <h2 id="album-deepdive-title" style="font-size:20px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Album Name</h2>
+          <div id="album-deepdive-artist" style="font-size:13px; color:var(--text-secondary); margin-top:2px;">Artist</div>
+          <div id="album-deepdive-meta" style="font-size:12px; color:var(--accent-rose); margin-top:3px;">0 hrs • 0 tracks</div>
+        </div>
+      </div>
+
+      <div style="max-height: 280px; overflow-y: auto; display:flex; flex-direction:column; gap:6px;" id="album-deepdive-tracklist"></div>
+    </div>
+  </div>
+
+  <!-- Floating Audio Preview Player Bar -->
+  <div class="floating-player-bar hidden" id="floating-player-bar">
+    <div class="player-capsule">
+      <div class="player-inner-flex">
+        <img class="player-art-sq" id="player-art" src="" alt="Album Art" />
+        <div class="player-text-wrap">
+          <div class="player-song-title" id="player-title">Track Title</div>
+          <div class="player-artist-name" id="player-artist">Artist</div>
+        </div>
+        <button class="player-btn-circle" id="player-play-btn" title="Play / Pause">▶</button>
+        <button class="player-btn-close" id="player-close-btn" title="Close">✕</button>
+      </div>
+      <div class="player-progress-line">
+        <div class="player-progress-filled" id="player-progress"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main ES Module Script Entrypoint -->
+  <script type="module" src="js/app.js"></script>
+
+</body>
+</html>
