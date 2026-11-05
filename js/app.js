@@ -18,14 +18,24 @@ class BitChordPulseApp {
   constructor() {
     this.masterState = null;
     this.currentTab = "listen-now";
-    this.currentListenNowMode = "all-time"; // 'all-time' | 'monthly' | 'daily'
+    this.masterTimeMode = "all-time"; // 'all-time' | 'yearly' | 'monthly' | 'weekly' | 'daily'
+    this.currentListenNowMode = "all-time"; // backward-compatible alias
     this.currentTimeframe = "all";
+
+    this.selectedYear = null;
+    this.availableYears = [];
+    this.heatmapYear = null;
     
     this.selectedMonth = "all";
     this.availableMonths = [];
+
+    this.selectedWeekKey = null;
+    this.availableWeeks = [];
+    this.weeklyWindowStart = 0;
     
     this.selectedDayDate = null;
     this.availableDays = [];
+    this.dailyWindowStart = 0;
     this.dayHourlyMode = "projected"; // 'projected' | 'exact'
 
     this.monthMetric = "hours"; // 'hours' or 'plays'
@@ -43,6 +53,22 @@ class BitChordPulseApp {
 
   async init() {
     this.attachEventListeners();
+
+    // User requested full database wipe: show empty state until user updates/uploads backup
+    const USER_CLEARED_FLAG = "mustats_user_cleared_empty_v3";
+    if (!localStorage.getItem(USER_CLEARED_FLAG)) {
+      try {
+        await pulseDB.resetDatabase();
+        PulseAnalytics.clearFilterCache();
+        localStorage.setItem(USER_CLEARED_FLAG, "true");
+        localStorage.removeItem("lastActiveTab");
+        localStorage.removeItem("mustats_active_time_mode");
+        localStorage.removeItem("mustats_active_subtab");
+      } catch (err) {
+        console.warn("Database reset error:", err);
+      }
+    }
+
     await this.loadDatabase();
   }
 
@@ -87,16 +113,93 @@ class BitChordPulseApp {
       });
     }
 
+    if (this.masterState.dayLedger) {
+      Object.keys(this.masterState.dayLedger).forEach(d => {
+        if (d && d.length === 10) {
+          daySet.add(d);
+          monthSet.add(d.slice(0, 7));
+        }
+      });
+    }
+
     this.availableMonths = Array.from(monthSet).sort();
     this.availableDays = Array.from(daySet).sort();
+
+    // Extract unique recorded years
+    const yearSet = new Set();
+    this.availableDays.forEach(d => {
+      if (d && d.length >= 4) yearSet.add(d.slice(0, 4));
+    });
+    this.availableMonths.forEach(m => {
+      if (m && m.length >= 4) yearSet.add(m.slice(0, 4));
+    });
+    this.availableYears = Array.from(yearSet).sort();
+    if (this.availableYears.length === 0) {
+      this.availableYears = ["2026"];
+    }
+    if (!this.selectedYear || !this.availableYears.includes(this.selectedYear)) {
+      this.selectedYear = this.availableYears[this.availableYears.length - 1];
+    }
+    if (!this.heatmapYear || !this.availableYears.includes(this.heatmapYear)) {
+      this.heatmapYear = this.selectedYear;
+    }
+
+    // Extract unique ISO Monday-to-Sunday week ranges
+    const weeksMap = new Map();
+    this.availableDays.forEach(dayStr => {
+      const w = this.getWeekRange(dayStr);
+      if (!weeksMap.has(w.key)) {
+        weeksMap.set(w.key, w);
+      }
+    });
+
+    this.availableWeeks = Array.from(weeksMap.values()).sort((a, b) => a.start.localeCompare(b.start));
 
     if (this.availableMonths.length > 0 && (!this.selectedMonth || this.selectedMonth === "all")) {
       this.selectedMonth = this.availableMonths[this.availableMonths.length - 1];
     }
 
+    if (this.availableWeeks.length > 0 && (!this.selectedWeekKey || !this.availableWeeks.some(w => w.key === this.selectedWeekKey))) {
+      this.selectedWeekKey = this.availableWeeks[this.availableWeeks.length - 1].key;
+    }
+
+    if (this.availableWeeks.length > 0) {
+      this.weeklyWindowStart = Math.max(0, this.availableWeeks.length - 5);
+    }
+
     if (this.availableDays.length > 0 && (!this.selectedDayDate || !this.availableDays.includes(this.selectedDayDate))) {
       this.selectedDayDate = this.availableDays[this.availableDays.length - 1];
     }
+
+    if (this.availableDays.length > 0) {
+      this.dailyWindowStart = Math.max(0, this.availableDays.length - 5);
+    }
+  }
+
+  getWeekRange(dateStr) {
+    const d = new Date(dateStr + "T12:00:00Z");
+    const day = d.getUTCDay();
+    const diffToMon = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() + diffToMon);
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate() + 6);
+    const toStr = dt => dt.toISOString().split("T")[0];
+    const start = toStr(monday);
+    const end = toStr(sunday);
+    return {
+      start,
+      end,
+      key: `week:${start}:${end}`,
+      label: `${this.formatDateShort(start)} – ${this.formatDateShort(end)}`
+    };
+  }
+
+  formatWeekLabel(weekKey) {
+    if (!weekKey) return "";
+    const cleanKey = weekKey.startsWith("week:") ? weekKey.replace("week:", "") : weekKey;
+    const [start, end] = cleanKey.split(":");
+    return `${this.formatDateShort(start)} – ${this.formatDateShort(end)}`;
   }
 
   /**
@@ -138,56 +241,126 @@ class BitChordPulseApp {
 
   /**
    * =========================================================================
-   * TAB 1: Listen Now (3-Mode Master Switcher: All-Time | Monthly | Daily)
+   * Universal 4-Mode Master Time Switcher (All-Time | Monthly | Weekly | Daily)
+   * Common across ALL tabs (Listen Now, Rhythm, Artists, Library, DNA)
    * =========================================================================
    */
   renderTabListenNow(filteredGlobal) {
-    this.setListenNowMode(this.currentListenNowMode);
+    this.updateListenNowSubviews(this.masterTimeMode);
   }
 
   setListenNowMode(mode) {
+    // Backward-compatible alias
+    this.setMasterTimeMode(mode);
+  }
+
+  setMasterTimeMode(mode) {
+    this.masterTimeMode = mode;
     this.currentListenNowMode = mode;
-    document.querySelectorAll("#ln-master-mode-switcher .master-pill-btn").forEach(btn => {
+
+    // 1. Update Segmented Pill Active State
+    document.querySelectorAll("#global-master-mode-switcher .master-pill-btn, #ln-master-mode-switcher .master-pill-btn").forEach(btn => {
       btn.classList.toggle("active", btn.getAttribute("data-mode") === mode);
     });
 
-    const badge = document.getElementById("master-mode-meta-badge");
-    const allTimePanel = document.getElementById("ln-view-alltime");
-    const monthlyPanel = document.getElementById("ln-view-monthly");
-    const dailyPanel = document.getElementById("ln-view-daily");
+    // 2. Manage Subnav Visibility & Strips
+    const yearlySubnav = document.getElementById("subnav-yearly-bar");
+    const monthlySubnav = document.getElementById("subnav-monthly-bar");
+    const weeklySubnav = document.getElementById("subnav-weekly-bar");
+    const dailySubnav = document.getElementById("subnav-daily-bar");
+
+    yearlySubnav?.classList.toggle("hidden", mode !== "yearly");
+    monthlySubnav?.classList.toggle("hidden", mode !== "monthly");
+    weeklySubnav?.classList.toggle("hidden", mode !== "weekly");
+    dailySubnav?.classList.toggle("hidden", mode !== "daily");
+
+    // Hide master nav completely if currently on Time & Rhythm tab
+    const masterNav = document.getElementById("universal-master-time-nav");
+    if (masterNav && this.currentTab === "time-rhythm") {
+      masterNav.classList.add("hidden");
+    }
+
+    // 3. Compute active currentTimeframe and update badge
+    const badge = document.getElementById("global-master-mode-meta-badge") || document.getElementById("master-mode-meta-badge");
 
     if (mode === "all-time") {
-      allTimePanel?.classList.remove("hidden");
-      monthlyPanel?.classList.add("hidden");
-      dailyPanel?.classList.add("hidden");
-
+      this.currentTimeframe = "all";
       if (badge && this.availableDays.length > 0) {
         const first = this.formatDateShort(this.availableDays[0]);
         const last = this.formatDateShort(this.availableDays[this.availableDays.length - 1]);
-        badge.textContent = `All-Time Observatory • ${first} – ${last}`;
+        badge.textContent = `All-Time Observatory • ${first} – ${last} (${this.availableDays.length} Active Days)`;
       }
-      const filtered = PulseAnalytics.filterState(this.masterState, this.currentTimeframe, false);
-      this.renderListenNowAllTime(filtered);
-
+    } else if (mode === "yearly") {
+      this.currentTimeframe = this.selectedYear || "all";
+      this.renderYearlyStrip();
+      if (badge) {
+        badge.textContent = `Yearly Observatory • ${this.selectedYear || "2026"}`;
+      }
     } else if (mode === "monthly") {
-      allTimePanel?.classList.add("hidden");
-      monthlyPanel?.classList.remove("hidden");
-      dailyPanel?.classList.add("hidden");
-
+      this.currentTimeframe = this.selectedMonth || "all";
+      this.renderMonthlyStrip();
       if (badge) {
         badge.textContent = `Monthly Focus • ${this.formatMonthName(this.selectedMonth)}`;
       }
-      this.renderListenNowMonthly();
-
+    } else if (mode === "weekly") {
+      this.currentTimeframe = this.selectedWeekKey || "all";
+      this.renderWeeklyStrip();
+      if (badge && this.selectedWeekKey) {
+        badge.textContent = `Weekly Focus • ${this.formatWeekLabel(this.selectedWeekKey)}`;
+      }
     } else if (mode === "daily") {
-      allTimePanel?.classList.add("hidden");
-      monthlyPanel?.classList.add("hidden");
-      dailyPanel?.classList.remove("hidden");
-
+      this.currentTimeframe = this.selectedDayDate || "all";
+      this.renderDailyStrip();
       if (badge && this.selectedDayDate) {
         badge.textContent = `Daily Breakdown • ${this.formatDateLong(this.selectedDayDate)}`;
       }
+    }
+
+    // 4. Update the active view on Listen Now
+    this.updateListenNowSubviews(mode);
+
+    // 5. Refresh current active tab
+    this.refreshActiveTab();
+  }
+
+  updateListenNowSubviews(mode) {
+    const allTimePanel = document.getElementById("ln-view-alltime");
+    const monthlyPanel = document.getElementById("ln-view-monthly");
+    const weeklyPanel = document.getElementById("ln-view-weekly");
+    const dailyPanel = document.getElementById("ln-view-daily");
+
+    allTimePanel?.classList.toggle("hidden", mode !== "all-time" && mode !== "yearly");
+    monthlyPanel?.classList.toggle("hidden", mode !== "monthly");
+    weeklyPanel?.classList.toggle("hidden", mode !== "weekly");
+    dailyPanel?.classList.toggle("hidden", mode !== "daily");
+
+    if (mode === "all-time" || mode === "yearly") {
+      const filterKey = mode === "yearly" ? (this.selectedYear || "all") : "all";
+      const filtered = PulseAnalytics.filterState(this.masterState, filterKey, false);
+      this.renderListenNowAllTime(filtered);
+    } else if (mode === "monthly") {
+      this.renderListenNowMonthly();
+    } else if (mode === "weekly") {
+      this.renderListenNowWeekly();
+    } else if (mode === "daily") {
       this.renderListenNowDaily();
+    }
+  }
+
+  refreshActiveTab() {
+    if (!this.masterState) return;
+    const filtered = PulseAnalytics.filterState(this.masterState, this.currentTimeframe, false);
+
+    if (this.currentTab === "listen-now") {
+      this.updateListenNowSubviews(this.masterTimeMode);
+    } else if (this.currentTab === "time-rhythm") {
+      this.renderTabTimeRhythm();
+    } else if (this.currentTab === "artists") {
+      this.renderTabArtists(filtered);
+    } else if (this.currentTab === "songs-albums") {
+      this.renderTabSongsAlbums(filtered);
+    } else if (this.currentTab === "dna-rig") {
+      this.renderTabDnaRig(filtered);
     }
   }
 
@@ -245,8 +418,9 @@ class BitChordPulseApp {
     const statStreak = document.getElementById("stat-alltime-streak");
     const statLongest = document.getElementById("stat-alltime-longest");
 
+    const totalMinsFormatted = Math.floor(kpis.totalMs / 60000).toLocaleString();
     if (statHours) statHours.textContent = `${kpis.hours}h ${kpis.minutes}m`;
-    if (statMs) statMs.textContent = `${(kpis.totalMs / 3600000).toFixed(1)} hours tracked`;
+    if (statMs) statMs.textContent = `${(kpis.totalMs / 3600000).toFixed(1)} hours tracked (${totalMinsFormatted} mins)`;
     if (statPlays) statPlays.textContent = kpis.totalPlays.toLocaleString();
     if (statPartials) statPartials.textContent = `${kpis.partialListens} skips`;
     if (statTracks) statTracks.textContent = kpis.uniqueTracks.toLocaleString();
@@ -259,6 +433,18 @@ class BitChordPulseApp {
 
     // 3. All-Time Growth Curve / Daily Horizon
     this.renderDailyTrendChart(daily);
+
+    // 3b. Monthly Horizon, Circadian Rhythm Curve & Day of Week Bars (Moved from Rhythm)
+    const hourly = PulseAnalytics.computeHourlyCircadian(filtered);
+    const weekly = PulseAnalytics.computeWeeklyBreakdown(filtered);
+    const monthlyYearly = PulseAnalytics.computeMonthlyAndYearly(this.masterState, filtered);
+
+    const peakBadge = document.getElementById("badge-circadian-peak");
+    if (peakBadge) peakBadge.textContent = `Peak: ${hourly.peakHourFormatted} • ${hourly.chronotype}`;
+
+    this.renderCircadianChart(hourly);
+    this.renderWeeklyBarsChart(weekly);
+    this.renderMonthlyHorizonChart(monthlyYearly);
 
     // 4. All-Time Top 3 Artists Podium
     const podiumEl = document.getElementById("alltime-artists-podium");
@@ -508,18 +694,61 @@ class BitChordPulseApp {
     }
   }
 
-  /**
-   * Mode B: Monthly Breakdown View
-   */
-  renderListenNowMonthly() {
-    const strip = document.getElementById("ln-months-pill-strip");
-    const indicator = document.getElementById("ln-month-indicator-pill");
+  selectYear(year) {
+    this.selectedYear = year;
+    this.currentTimeframe = year;
+    this.setMasterTimeMode("yearly");
+  }
 
-    if (indicator) {
-      indicator.textContent = this.formatMonthName(this.selectedMonth);
+  renderYearlyStrip() {
+    const strip = document.getElementById("global-yearly-pills-strip");
+    if (!strip) return;
+
+    if (!this.availableYears || this.availableYears.length === 0) {
+      if (this.availableDays && this.availableDays.length > 0) {
+        this.availableYears = [...new Set(this.availableDays.map(d => d.slice(0, 4)))].sort();
+      } else {
+        this.availableYears = ["2026"];
+      }
     }
 
-    if (strip) {
+    if (!this.selectedYear || !this.availableYears.includes(this.selectedYear)) {
+      this.selectedYear = this.availableYears[this.availableYears.length - 1];
+    }
+
+    strip.innerHTML = this.availableYears.map(yr => {
+      const isActive = this.selectedYear === yr ? "active" : "";
+      return `<button class="yearly-pill-btn ${isActive}" data-year="${yr}">📅 ${yr}</button>`;
+    }).join("");
+
+    strip.querySelectorAll(".yearly-pill-btn").forEach(btn => {
+      btn.onclick = () => {
+        this.selectYear(btn.getAttribute("data-year"));
+      };
+    });
+  }
+
+  selectMonth(month) {
+    this.selectedMonth = month;
+    this.setMasterTimeMode("monthly");
+  }
+
+  rollMonthly(step) {
+    const idx = this.availableMonths.indexOf(this.selectedMonth);
+    const newIdx = Math.max(0, Math.min(this.availableMonths.length - 1, idx + step));
+    if (newIdx !== idx) {
+      this.selectMonth(this.availableMonths[newIdx]);
+    }
+  }
+
+  renderMonthlyStrip() {
+    const strips = [
+      document.getElementById("global-months-pill-strip"),
+      document.getElementById("ln-months-pill-strip"),
+      document.getElementById("months-pill-strip")
+    ].filter(Boolean);
+
+    strips.forEach(strip => {
       strip.innerHTML = this.availableMonths.map(m => {
         const isActive = this.selectedMonth === m ? "active" : "";
         const label = this.formatMonthShort(m);
@@ -528,33 +757,51 @@ class BitChordPulseApp {
 
       strip.querySelectorAll(".month-pill-btn").forEach(btn => {
         btn.onclick = () => {
-          this.selectedMonth = btn.getAttribute("data-month");
-          this.renderListenNowMonthly();
+          this.selectMonth(btn.getAttribute("data-month"));
         };
       });
-    }
+    });
 
-    const prevBtn = document.getElementById("btn-ln-month-prev");
-    const nextBtn = document.getElementById("btn-ln-month-next");
+    const prevBtns = [
+      document.getElementById("btn-global-month-prev"),
+      document.getElementById("btn-ln-month-prev"),
+      document.getElementById("btn-month-prev")
+    ].filter(Boolean);
 
-    if (prevBtn) {
-      prevBtn.onclick = () => {
-        const idx = this.availableMonths.indexOf(this.selectedMonth);
-        if (idx > 0) {
-          this.selectedMonth = this.availableMonths[idx - 1];
-          this.renderListenNowMonthly();
-        }
-      };
-    }
+    const nextBtns = [
+      document.getElementById("btn-global-month-next"),
+      document.getElementById("btn-ln-month-next"),
+      document.getElementById("btn-month-next")
+    ].filter(Boolean);
 
-    if (nextBtn) {
-      nextBtn.onclick = () => {
-        const idx = this.availableMonths.indexOf(this.selectedMonth);
-        if (idx >= 0 && idx < this.availableMonths.length - 1) {
-          this.selectedMonth = this.availableMonths[idx + 1];
-          this.renderListenNowMonthly();
-        }
-      };
+    const idx = this.availableMonths.indexOf(this.selectedMonth);
+    const canPrev = idx > 0;
+    const canNext = idx < this.availableMonths.length - 1;
+
+    prevBtns.forEach(btn => {
+      btn.disabled = !canPrev;
+      btn.style.opacity = canPrev ? "1" : "0.3";
+      btn.style.cursor = canPrev ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollMonthly(-1);
+    });
+
+    nextBtns.forEach(btn => {
+      btn.disabled = !canNext;
+      btn.style.opacity = canNext ? "1" : "0.3";
+      btn.style.cursor = canNext ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollMonthly(1);
+    });
+  }
+
+  /**
+   * Mode B: Monthly Breakdown View
+   */
+  renderListenNowMonthly() {
+    this.renderMonthlyStrip();
+
+    const indicator = document.getElementById("ln-month-indicator-pill");
+    if (indicator) {
+      indicator.textContent = this.formatMonthName(this.selectedMonth);
     }
 
     // Filter data for selected month
@@ -745,7 +992,13 @@ class BitChordPulseApp {
     const grid = document.getElementById("ln-cal-month-days-grid");
     if (!grid) return;
 
-    const [yearStr, mStr] = this.selectedMonth.split("-");
+    let monthStr = this.selectedMonth;
+    if (!monthStr || monthStr === "all") {
+      monthStr = this.availableMonths?.[this.availableMonths.length - 1] || "2026-11";
+    }
+    if (!monthStr.includes("-")) return;
+
+    const [yearStr, mStr] = monthStr.split("-");
     const year = parseInt(yearStr, 10);
     const month = parseInt(mStr, 10) - 1;
 
@@ -760,18 +1013,22 @@ class BitChordPulseApp {
     }
 
     for (let day = 1; day <= totalDays; day++) {
-      const dateStr = `${yearStr}-${mStr.padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-      const dayData = monthState.dates[dateStr];
+      const dateStr = `${yearStr}-${mStr.padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const dayData = monthState.dates ? monthState.dates[dateStr] : null;
       const isSelected = dateStr === this.selectedDayDate ? "selected" : "";
 
       if (dayData && dayData.ms > 0) {
-        const topTrack = [...dayData.tracks].sort((a, b) => b.ms - a.ms)[0];
-        const artUrl = artEngine.getTrackArtworkUrl(topTrack, this.masterState.artMap);
+        const sortedTracks = Array.isArray(dayData.tracks)
+          ? [...dayData.tracks].sort((a, b) => (b.ms || 0) - (a.ms || 0))
+          : [];
+        const topTrack = sortedTracks.length > 0 ? sortedTracks[0] : null;
+        const artUrl = topTrack ? artEngine.getTrackArtworkUrl(topTrack, this.masterState.artMap) : "";
         const mins = Math.round(dayData.ms / 60000);
+        const topTitle = topTrack && topTrack.title ? ` • #1: ${topTrack.title}` : "";
 
         html += `
-          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: ${mins}m (${dayData.plays}p) - Click to inspect day">
-            <img class="month-cell-bg-art" src="${artUrl}" alt="" />
+          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: ${mins}m (${dayData.plays || 0} plays)${topTitle} - Click to inspect day">
+            ${artUrl ? `<img class="month-cell-bg-art" src="${artUrl}" alt="" />` : `<div class="month-cell-bg-art" style="background:rgba(250,36,60,0.18);"></div>`}
             <span class="month-cell-day-num">${day}</span>
             <span class="month-cell-min-badge">${mins}m</span>
           </div>
@@ -796,13 +1053,359 @@ class BitChordPulseApp {
     });
   }
 
+  // =========================================================================
+  // WEEKLY BREAKDOWN & ROLLING CAROUSEL METHODS
+  // =========================================================================
+
+  renderWeeklyStrip() {
+    const strips = [
+      document.getElementById("global-weekly-pills-strip")
+    ].filter(Boolean);
+
+    if (strips.length === 0 || !this.availableWeeks || this.availableWeeks.length === 0) return;
+
+    const totalWeeks = this.availableWeeks.length;
+    const windowSize = Math.min(5, totalWeeks);
+
+    if (this.weeklyWindowStart > totalWeeks - windowSize) {
+      this.weeklyWindowStart = Math.max(0, totalWeeks - windowSize);
+    }
+    if (this.weeklyWindowStart < 0) {
+      this.weeklyWindowStart = 0;
+    }
+
+    if (!this.selectedWeekKey || !this.availableWeeks.some(w => w.key === this.selectedWeekKey)) {
+      this.selectedWeekKey = this.availableWeeks[totalWeeks - 1].key;
+    }
+
+    const selIdx = this.availableWeeks.findIndex(w => w.key === this.selectedWeekKey);
+    if (selIdx >= 0) {
+      if (selIdx < this.weeklyWindowStart) {
+        this.weeklyWindowStart = selIdx;
+      } else if (selIdx >= this.weeklyWindowStart + windowSize) {
+        this.weeklyWindowStart = selIdx - windowSize + 1;
+      }
+    }
+
+    const visibleWeeks = this.availableWeeks.slice(this.weeklyWindowStart, this.weeklyWindowStart + windowSize);
+
+    strips.forEach(strip => {
+      strip.innerHTML = visibleWeeks.map(w => {
+        const isActive = w.key === this.selectedWeekKey;
+        // Compute total hours for pill badge
+        let weekMs = 0;
+        if (this.masterState && this.masterState.dayLedger && Object.keys(this.masterState.dayLedger).length > 0) {
+          for (const [d, l] of Object.entries(this.masterState.dayLedger)) {
+            if (d >= w.start && d <= w.end) weekMs += l.ms || 0;
+          }
+        } else if (this.masterState && this.masterState.tracks) {
+          for (const t of this.masterState.tracks) {
+            if (t.days) {
+              for (const [d, val] of Object.entries(t.days)) {
+                if (d >= w.start && d <= w.end) weekMs += val.ms || 0;
+              }
+            }
+          }
+        }
+        if (weekMs === 0 && this.masterState && this.masterState.monthly) {
+          for (const m of this.masterState.monthly) {
+            if (m.days) {
+              for (const [d, val] of Object.entries(m.days)) {
+                if (d >= w.start && d <= w.end) weekMs += val.ms || 0;
+              }
+            }
+          }
+        }
+        const hrs = (weekMs / 3600000).toFixed(1);
+
+        return `
+          <button class="weekly-active-pill ${isActive ? "active" : ""}" data-week-key="${w.key}" title="${w.label}: ${hrs}h">
+            <span class="daily-pill-date">${w.label}</span>
+            <span class="daily-pill-badge">${hrs}h</span>
+          </button>
+        `;
+      }).join("");
+
+      strip.querySelectorAll(".weekly-active-pill").forEach(pill => {
+        pill.onclick = () => {
+          const key = pill.getAttribute("data-week-key");
+          this.selectWeek(key);
+        };
+      });
+    });
+
+    const indicator = document.getElementById("global-week-page-indicator");
+    if (indicator) {
+      indicator.textContent = `${this.weeklyWindowStart + 1}–${this.weeklyWindowStart + visibleWeeks.length} of ${totalWeeks}`;
+    }
+
+    const prevBtns = [
+      document.getElementById("btn-global-week-prev")
+    ].filter(Boolean);
+
+    const nextBtns = [
+      document.getElementById("btn-global-week-next")
+    ].filter(Boolean);
+
+    const canPrev = this.weeklyWindowStart > 0;
+    const canNext = this.weeklyWindowStart < totalWeeks - windowSize;
+
+    prevBtns.forEach(btn => {
+      btn.disabled = !canPrev;
+      btn.style.opacity = canPrev ? "1" : "0.3";
+      btn.style.cursor = canPrev ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollWeeklyWindow(-1);
+    });
+
+    nextBtns.forEach(btn => {
+      btn.disabled = !canNext;
+      btn.style.opacity = canNext ? "1" : "0.3";
+      btn.style.cursor = canNext ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollWeeklyWindow(1);
+    });
+  }
+
+  rollWeeklyWindow(step) {
+    if (!this.availableWeeks || this.availableWeeks.length === 0) return;
+    const totalWeeks = this.availableWeeks.length;
+    const windowSize = Math.min(5, totalWeeks);
+
+    this.weeklyWindowStart = Math.max(0, Math.min(totalWeeks - windowSize, this.weeklyWindowStart + step));
+    const visibleWeeks = this.availableWeeks.slice(this.weeklyWindowStart, this.weeklyWindowStart + windowSize);
+
+    if (!visibleWeeks.some(w => w.key === this.selectedWeekKey)) {
+      this.selectedWeekKey = step > 0 ? visibleWeeks[0].key : visibleWeeks[visibleWeeks.length - 1].key;
+    }
+
+    this.setMasterTimeMode("weekly");
+  }
+
+  selectWeek(weekKey) {
+    this.selectedWeekKey = weekKey;
+    this.setMasterTimeMode("weekly");
+  }
+
   /**
-   * Mode C: Daily Deep-Dive View
+   * Mode C: Weekly Breakdown View
+   */
+  renderListenNowWeekly() {
+    this.renderWeeklyStrip();
+
+    if (!this.masterState || !this.selectedWeekKey) return;
+
+    const weekData = PulseAnalytics.computeWeekBreakdown(this.masterState, this.selectedWeekKey);
+    if (!weekData) return;
+
+    // 1. Weekly Hero KPI Strip
+    const tTimeEl = document.getElementById("stat-week-total-time");
+    const tMinsEl = document.getElementById("stat-week-exact-mins");
+    const tPlaysEl = document.getElementById("stat-week-total-plays");
+    const tSongsEl = document.getElementById("stat-week-unique-songs");
+    const topSongTitleEl = document.getElementById("stat-week-top-song-title");
+    const topSongMetaEl = document.getElementById("stat-week-top-song-meta");
+    const topArtistNameEl = document.getElementById("stat-week-top-artist-name");
+    const topArtistMetaEl = document.getElementById("stat-week-top-artist-meta");
+
+    if (tTimeEl) tTimeEl.textContent = `${weekData.totalHours}h ${weekData.totalMinutes % 60}m`;
+    if (tMinsEl) tMinsEl.textContent = `${weekData.totalMinutes} tracked mins`;
+    if (tPlaysEl) tPlaysEl.textContent = `${weekData.totalPlays}`;
+    if (tSongsEl) tSongsEl.textContent = `${weekData.weekTracks.length}`;
+
+    if (topSongTitleEl) topSongTitleEl.textContent = weekData.topSong ? weekData.topSong.title : "—";
+    if (topSongMetaEl) topSongMetaEl.textContent = weekData.topSong ? `${weekData.topSong.artist} • ${weekData.topSong.weekPlays} plays` : "0 plays";
+
+    if (topArtistNameEl) topArtistNameEl.textContent = weekData.topArtist ? weekData.topArtist.name : "—";
+    if (topArtistMetaEl) topArtistMetaEl.textContent = weekData.topArtist ? `${weekData.topArtist.hours} hrs • ${weekData.topArtist.plays} plays` : "0 hrs";
+
+    // 2. Top 3 Hero Cards Row
+    const artistName = document.getElementById("ln-week-artist-name");
+    const artistMeta = document.getElementById("ln-week-artist-meta");
+    const artistImg = document.getElementById("ln-week-artist-img");
+
+    if (artistName) artistName.textContent = weekData.topArtist ? weekData.topArtist.name : "—";
+    if (artistMeta) artistMeta.textContent = weekData.topArtist ? `${weekData.topArtist.hours} hrs • ${weekData.topArtist.plays} plays` : "0 hrs";
+    if (artistImg && weekData.topArtist) {
+      artEngine.getArtistPortrait(weekData.topArtist.name, this.masterState.searchHistory, this.masterState.portraitMap, weekData.topArtist.tracks)
+        .then(portrait => { if (portrait) artistImg.src = portrait; });
+    }
+
+    const songTitle = document.getElementById("ln-week-song-title");
+    const songMeta = document.getElementById("ln-week-song-meta");
+    const songImg = document.getElementById("ln-week-song-img");
+    const songPlay = document.getElementById("ln-week-song-play-btn");
+
+    if (songTitle) songTitle.textContent = weekData.topSong ? weekData.topSong.title : "—";
+    if (songMeta) songMeta.textContent = weekData.topSong ? `${weekData.topSong.artist} • ${weekData.topSong.weekPlays} plays` : "0 plays";
+    if (songImg && weekData.topSong) {
+      songImg.src = artEngine.getTrackArtworkUrl(weekData.topSong, this.masterState.artMap);
+    }
+    if (songPlay && weekData.topSong) {
+      songPlay.onclick = e => {
+        e.stopPropagation();
+        const art = artEngine.getTrackArtworkUrl(weekData.topSong, this.masterState.artMap);
+        const previewUrl = this.masterState.artMap[weekData.topSong.id]?.previewUrl || null;
+        pulsePlayer.playTrack(weekData.topSong, art, previewUrl);
+      };
+    }
+
+    const albumTitle = document.getElementById("ln-week-album-title");
+    const albumMeta = document.getElementById("ln-week-album-meta");
+    const albumImg = document.getElementById("ln-week-album-img");
+
+    if (albumTitle) albumTitle.textContent = weekData.topAlbum ? weekData.topAlbum.name : "—";
+    if (albumMeta) albumMeta.textContent = weekData.topAlbum ? `${weekData.topAlbum.artist} • ${weekData.topAlbum.hours} hrs` : "0 hrs";
+    if (albumImg && weekData.topAlbum) {
+      albumImg.src = artEngine.getTrackArtworkUrl(weekData.topAlbum, this.masterState.artMap);
+    }
+
+    // 3. Render 7-Day Mon-Sun Bar Chart
+    this.renderWeeklyDaysChart(weekData);
+
+    // 4. Render Top Anthems of Week Tracklist
+    const weekSongsList = document.getElementById("ln-week-top-songs-list");
+    if (weekSongsList) {
+      const maxMs = weekData.weekTracks[0]?.weekMs || 1;
+      weekSongsList.innerHTML = weekData.weekTracks.slice(0, 15).map((track, idx) => {
+        const art = artEngine.getTrackArtworkUrl(track, this.masterState.artMap);
+        const totalMinutes = Math.round(track.weekMs / 60000);
+        const sharePct = Math.min(100, Math.max(4, Math.round((track.weekMs / maxMs) * 100)));
+        return `
+          <div class="apple-track-row" data-track-id="${track.id}">
+            <span class="track-col-rank">${idx + 1}</span>
+            <div class="track-art-box">
+              <img src="${art}" alt="" />
+              <div class="track-hover-play">▶</div>
+            </div>
+            <div class="track-col-title-artist">
+              <div class="track-row-title">${track.title}</div>
+              <div class="track-row-artist">${track.artist}</div>
+            </div>
+            <div class="track-col-album">${track.album || "Single"}</div>
+            <div class="track-col-plays-time">
+              <span class="track-plays-text">${track.weekPlays} plays • ${totalMinutes}m</span>
+              <div class="track-share-bar-bg">
+                <div class="track-share-bar-fill" style="width:${sharePct}%"></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      weekSongsList.querySelectorAll(".apple-track-row").forEach(row => {
+        const id = row.getAttribute("data-track-id");
+        const track = weekData.weekTracks.find(t => t.id === id);
+        row.onclick = () => { if (track) this.openSongDeepDive(track); };
+      });
+    }
+  }
+
+  renderWeeklyDaysChart(weekData) {
+    const canvas = document.getElementById("chart-ln-weekly-days");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (this.charts.weeklyDays) {
+      this.charts.weeklyDays.destroy();
+    }
+
+    const labels = weekData.days.map(d => `${d.dayName} (${this.formatDateShort(d.date)})`);
+    const hoursData = weekData.days.map(d => d.hours);
+
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+    gradient.addColorStop(0, "rgba(250, 36, 60, 0.95)");
+    gradient.addColorStop(1, "rgba(255, 94, 126, 0.35)");
+
+    this.charts.weeklyDays = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          data: hoursData,
+          backgroundColor: gradient,
+          borderRadius: 8,
+          borderSkipped: false,
+          maxBarThickness: 38
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(18, 18, 24, 0.94)",
+            titleColor: "#FA243C",
+            bodyColor: "#FFFFFF",
+            borderColor: "rgba(250, 36, 60, 0.35)",
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 12,
+            callbacks: {
+              label: ctx => `Listening: ${ctx.raw}h (${weekData.days[ctx.dataIndex]?.plays || 0} plays • Click to open Day View)`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: "rgba(255, 255, 255, 0.65)", font: { size: 11.5, family: "Inter" } }
+          },
+          y: {
+            grid: { color: "rgba(255, 255, 255, 0.05)" },
+            ticks: {
+              color: "rgba(255, 255, 255, 0.45)",
+              callback: val => val + "h",
+              font: { size: 10.5, family: "Inter" }
+            }
+          }
+        },
+        onClick: (_, elements) => {
+          if (elements.length > 0) {
+            const idx = elements[0].index;
+            const clickedDay = weekData.days[idx];
+            if (clickedDay && this.availableDays.includes(clickedDay.date)) {
+              this.selectedDayDate = clickedDay.date;
+              this.setMasterTimeMode("daily");
+            }
+          }
+        }
+      }
+    });
+  }
+
+  selectDate(dateStr) {
+    this.selectedDayDate = dateStr;
+    this.setMasterTimeMode("daily");
+  }
+
+  renderDailyStrip() {
+    this.renderListenNowDaily();
+  }
+
+  /**
+   * Mode D: Daily Deep-Dive View (5-Date Rolling Horizon)
    */
   renderListenNowDaily() {
-    const strip = document.getElementById("ln-daily-pills-strip");
-    const nativePicker = document.getElementById("ln-day-native-picker");
-    const badge = document.getElementById("master-mode-meta-badge");
+    const strips = [
+      document.getElementById("global-daily-pills-strip"),
+      document.getElementById("ln-daily-pills-strip")
+    ].filter(Boolean);
+
+    const badge = document.getElementById("global-master-mode-meta-badge") || document.getElementById("master-mode-meta-badge");
+    const prevDayBtns = [
+      document.getElementById("btn-global-day-prev"),
+      document.getElementById("btn-ln-day-prev")
+    ].filter(Boolean);
+
+    const nextDayBtns = [
+      document.getElementById("btn-global-day-next"),
+      document.getElementById("btn-ln-day-next")
+    ].filter(Boolean);
+
+    const pageIndicators = [
+      document.getElementById("global-day-page-indicator"),
+      document.getElementById("ln-day-page-indicator")
+    ].filter(Boolean);
 
     if (!this.availableDays || this.availableDays.length === 0) {
       if (badge) badge.textContent = "Daily Breakdown • No Data Available";
@@ -817,31 +1420,40 @@ class BitChordPulseApp {
       return;
     }
 
+    const totalDays = this.availableDays.length;
+    const maxStart = Math.max(0, totalDays - 5);
+
+    // Default to latest date if not set or invalid
     if (!this.selectedDayDate || !this.availableDays.includes(this.selectedDayDate)) {
-      this.selectedDayDate = this.availableDays[this.availableDays.length - 1];
+      this.selectedDayDate = this.availableDays[totalDays - 1];
     }
+
+    const selIdx = this.availableDays.indexOf(this.selectedDayDate);
+
+    // Keep window aligned so that selectedDayDate is always visible inside the 5 dates
+    if (this.dailyWindowStart === undefined) {
+      this.dailyWindowStart = maxStart;
+    } else {
+      if (selIdx !== -1 && (selIdx < this.dailyWindowStart || selIdx >= this.dailyWindowStart + 5)) {
+        this.dailyWindowStart = Math.min(maxStart, Math.max(0, Math.floor(selIdx / 5) * 5));
+      }
+    }
+    this.dailyWindowStart = Math.min(maxStart, Math.max(0, this.dailyWindowStart));
 
     if (badge && this.selectedDayDate) {
       badge.textContent = `Daily Breakdown • ${this.formatDateLong(this.selectedDayDate)}`;
     }
 
-    if (nativePicker) {
-      nativePicker.min = this.availableDays[0];
-      nativePicker.max = this.availableDays[this.availableDays.length - 1];
-      nativePicker.value = this.selectedDayDate;
-      nativePicker.onchange = e => {
-        if (e.target.value) {
-          this.selectedDayDate = e.target.value;
-          this.renderListenNowDaily();
-        }
-      };
-    }
+    // Get the exact 5 dates for the current window
+    const visibleDays = this.availableDays.slice(this.dailyWindowStart, this.dailyWindowStart + 5);
 
-    if (strip) {
-      strip.innerHTML = this.availableDays.map(dateStr => {
+    strips.forEach(strip => {
+      strip.innerHTML = visibleDays.map(dateStr => {
         const isActive = this.selectedDayDate === dateStr ? "active" : "";
         let dayMs = 0;
-        if (this.masterState.tracks) {
+        if (this.masterState.dayLedger && this.masterState.dayLedger[dateStr]) {
+          dayMs = this.masterState.dayLedger[dateStr].ms || 0;
+        } else if (this.masterState.tracks) {
           for (const t of this.masterState.tracks) {
             if (t.days && t.days[dateStr]) dayMs += t.days[dateStr].ms || 0;
           }
@@ -858,8 +1470,8 @@ class BitChordPulseApp {
         const shortDate = this.formatDateShort(dateStr);
 
         return `
-          <button class="daily-active-pill ${isActive}" data-date="${dateStr}">
-            <span>${shortDate}</span>
+          <button class="daily-active-pill ${isActive}" data-date="${dateStr}" title="${dateStr}: ${hours}h">
+            <span class="daily-pill-date">${shortDate}</span>
             <span class="daily-pill-badge">${hours}h</span>
           </button>
         `;
@@ -867,58 +1479,69 @@ class BitChordPulseApp {
 
       strip.querySelectorAll(".daily-active-pill").forEach(btn => {
         btn.onclick = () => {
-          this.selectedDayDate = btn.getAttribute("data-date");
-          this.renderListenNowDaily();
+          this.selectDate(btn.getAttribute("data-date"));
         };
       });
 
-      // Smoothly scroll active pill into visible center
-      const activePill = strip.querySelector(".daily-active-pill.active");
-      if (activePill) {
-        activePill.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      // Natural mouse wheel rolling support (rolls by 5 dates)
+      if (!strip._rollAttached) {
+        strip._rollAttached = true;
+        let isRolling = false;
+        strip.addEventListener("wheel", e => {
+          e.preventDefault();
+          if (isRolling) return;
+          const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+          if (Math.abs(delta) > 15) {
+            isRolling = true;
+            this.rollDailyWindow(delta > 0 ? 5 : -5);
+            setTimeout(() => { isRolling = false; }, 320);
+          }
+        }, { passive: false });
+
+        // Natural touch swipe rolling on mobile (swipes left/right by 5 dates)
+        let touchStartX = 0;
+        let touchStartY = 0;
+        strip.addEventListener("touchstart", e => {
+          if (e.touches.length > 0) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+          }
+        }, { passive: true });
+
+        strip.addEventListener("touchend", e => {
+          if (e.changedTouches.length > 0) {
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy)) {
+              this.rollDailyWindow(dx < 0 ? 5 : -5);
+            }
+          }
+        }, { passive: true });
       }
-    }
+    });
 
-    const prevDayBtn = document.getElementById("btn-ln-day-prev");
-    const nextDayBtn = document.getElementById("btn-ln-day-next");
-    const curIdx = this.availableDays.indexOf(this.selectedDayDate);
+    const canPrev = this.dailyWindowStart > 0;
+    const canNext = this.dailyWindowStart < maxStart;
 
-    if (prevDayBtn) {
-      prevDayBtn.disabled = curIdx <= 0;
-      prevDayBtn.style.opacity = curIdx <= 0 ? "0.35" : "1";
-      prevDayBtn.style.cursor = curIdx <= 0 ? "not-allowed" : "pointer";
-      prevDayBtn.onclick = () => {
-        if (curIdx > 0) {
-          this.selectedDayDate = this.availableDays[curIdx - 1];
-          this.renderListenNowDaily();
-        } else if (curIdx === -1) {
-          const prior = this.availableDays.filter(d => d < this.selectedDayDate);
-          if (prior.length > 0) {
-            this.selectedDayDate = prior[prior.length - 1];
-            this.renderListenNowDaily();
-          }
-        }
-      };
-    }
+    prevDayBtns.forEach(btn => {
+      btn.disabled = !canPrev;
+      btn.style.opacity = canPrev ? "1" : "0.3";
+      btn.style.cursor = canPrev ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollDailyWindow(-5);
+    });
 
-    if (nextDayBtn) {
-      const isLast = curIdx >= this.availableDays.length - 1;
-      nextDayBtn.disabled = isLast;
-      nextDayBtn.style.opacity = isLast ? "0.35" : "1";
-      nextDayBtn.style.cursor = isLast ? "not-allowed" : "pointer";
-      nextDayBtn.onclick = () => {
-        if (curIdx >= 0 && curIdx < this.availableDays.length - 1) {
-          this.selectedDayDate = this.availableDays[curIdx + 1];
-          this.renderListenNowDaily();
-        } else if (curIdx === -1) {
-          const subsequent = this.availableDays.filter(d => d > this.selectedDayDate);
-          if (subsequent.length > 0) {
-            this.selectedDayDate = subsequent[0];
-            this.renderListenNowDaily();
-          }
-        }
-      };
-    }
+    nextDayBtns.forEach(btn => {
+      btn.disabled = !canNext;
+      btn.style.opacity = canNext ? "1" : "0.3";
+      btn.style.cursor = canNext ? "pointer" : "not-allowed";
+      btn.onclick = () => this.rollDailyWindow(5);
+    });
+
+    pageIndicators.forEach(pi => {
+      const startNum = this.dailyWindowStart + 1;
+      const endNum = Math.min(totalDays, this.dailyWindowStart + 5);
+      pi.textContent = `${startNum}–${endNum} of ${totalDays}`;
+    });
 
     // Compute Day Breakdown
     const dayData = PulseAnalytics.computeDayBreakdown(this.masterState, this.selectedDayDate);
@@ -1063,6 +1686,20 @@ class BitChordPulseApp {
     }
   }
 
+  rollDailyWindow(step) {
+    if (!this.availableDays || this.availableDays.length <= 5) return;
+    const maxStart = Math.max(0, this.availableDays.length - 5);
+    const targetStart = Math.min(maxStart, Math.max(0, (this.dailyWindowStart || 0) + step));
+    if (targetStart === this.dailyWindowStart) return;
+
+    this.dailyWindowStart = targetStart;
+    const visibleDays = this.availableDays.slice(this.dailyWindowStart, this.dailyWindowStart + 5);
+    if (!visibleDays.includes(this.selectedDayDate)) {
+      this.selectedDayDate = step > 0 ? visibleDays[0] : visibleDays[visibleDays.length - 1];
+    }
+    this.setMasterTimeMode("daily");
+  }
+
   renderDailyHourlyChart(dayData) {
     const canvas = document.getElementById("chart-ln-daily-hourly");
     if (!canvas || typeof Chart === "undefined") return;
@@ -1142,55 +1779,81 @@ class BitChordPulseApp {
   renderTabTimeRhythm() {
     this.renderTimeNavigatorBar();
 
+    // Sync view mode toggle pill buttons
+    document.querySelectorAll("#heatmap-view-toggle .view-toggle-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.getAttribute("data-view") === this.heatmapViewMode);
+    });
+
+    // Render Heatmap Year Selector Pills
+    const yearSelector = document.getElementById("heatmap-year-selector");
+    if (yearSelector && this.availableYears && this.availableYears.length > 0) {
+      const activeYr = this.heatmapYear || this.availableYears[this.availableYears.length - 1];
+      yearSelector.innerHTML = this.availableYears.map(yr => {
+        const isActive = activeYr === yr ? "active" : "";
+        return `<button class="heatmap-year-pill ${isActive}" data-year="${yr}">📅 ${yr}</button>`;
+      }).join("");
+
+      yearSelector.querySelectorAll(".heatmap-year-pill").forEach(btn => {
+        btn.onclick = () => {
+          this.heatmapYear = btn.getAttribute("data-year");
+          this.renderTabTimeRhythm();
+        };
+      });
+    }
+
     const monthFilter = this.selectedMonth === "all" ? "all" : this.selectedMonth;
     const filteredMonth = PulseAnalytics.filterState(this.masterState, monthFilter, false);
 
     this.renderMonthSummaryStrip(filteredMonth);
 
+    const currentYear = this.heatmapYear || (this.availableYears?.[this.availableYears.length - 1]) || 2026;
     if (this.heatmapViewMode === "github") {
       document.getElementById("github-heatmap-view")?.classList.remove("hidden");
       document.getElementById("month-calendar-cover-view")?.classList.add("hidden");
-      document.getElementById("heatmap-display-title").textContent = "Listening Contribution Matrix (2026)";
+      if (yearSelector) yearSelector.classList.remove("hidden");
+      document.getElementById("heatmap-display-title").textContent = `Listening Contribution Matrix (${currentYear})`;
       document.getElementById("heatmap-display-subtitle").textContent = "Hover squares for details or click any day to inspect full day records below";
       this.renderGitHubContributionMatrix();
     } else {
       document.getElementById("github-heatmap-view")?.classList.add("hidden");
       document.getElementById("month-calendar-cover-view")?.classList.remove("hidden");
-      const monthName = this.formatMonthName(this.selectedMonth);
+      if (yearSelector) yearSelector.classList.add("hidden");
+
+      const activeMonthStr = (!this.selectedMonth || this.selectedMonth === "all")
+        ? (this.availableMonths?.[this.availableMonths.length - 1] || "2026-11")
+        : this.selectedMonth;
+      const monthName = this.formatMonthName(activeMonthStr);
       document.getElementById("heatmap-display-title").textContent = `${monthName} Calendar (Cover Art View)`;
       document.getElementById("heatmap-display-subtitle").textContent = "Every day displays the album artwork of your #1 most played anthem";
       this.renderMonthCalendarCoverView(filteredMonth);
     }
-
-    const hourly = PulseAnalytics.computeHourlyCircadian(filteredMonth);
-    const weekly = PulseAnalytics.computeWeeklyBreakdown(filteredMonth);
-    const monthlyYearly = PulseAnalytics.computeMonthlyAndYearly(this.masterState, filteredMonth);
-
-    const peakBadge = document.getElementById("badge-circadian-peak");
-    if (peakBadge) peakBadge.textContent = `Peak: ${hourly.peakHourFormatted} • ${hourly.chronotype}`;
-
-    this.renderCircadianChart(hourly);
-    this.renderWeeklyBarsChart(weekly);
-    this.renderMonthlyHorizonChart(monthlyYearly);
   }
 
   renderTimeNavigatorBar() {
     const strip = document.getElementById("months-pill-strip");
     if (!strip) return;
 
-    let html = `<button class="month-pill-btn ${this.selectedMonth === 'all' ? 'active' : ''}" data-month="all">All Months</button>`;
+    const isMonthCover = this.heatmapViewMode === "month-cover";
+    const activeMonth = (!this.selectedMonth || this.selectedMonth === "all")
+      ? (isMonthCover && this.availableMonths?.length > 0 ? this.availableMonths[this.availableMonths.length - 1] : "all")
+      : this.selectedMonth;
 
-    this.availableMonths.forEach(m => {
-      const label = this.formatMonthShort(m);
-      const isActive = this.selectedMonth === m ? "active" : "";
-      html += `<button class="month-pill-btn ${isActive}" data-month="${m}">${label}</button>`;
-    });
+    let html = `<button class="month-pill-btn ${this.selectedMonth === 'all' && !isMonthCover ? 'active' : ''}" data-month="all">All Months</button>`;
+
+    if (this.availableMonths) {
+      this.availableMonths.forEach(m => {
+        const label = this.formatMonthShort(m);
+        const isActive = activeMonth === m ? "active" : "";
+        html += `<button class="month-pill-btn ${isActive}" data-month="${m}">${label}</button>`;
+      });
+    }
 
     strip.innerHTML = html;
 
     strip.querySelectorAll(".month-pill-btn").forEach(btn => {
       btn.onclick = () => {
-        this.selectedMonth = btn.getAttribute("data-month");
+        const m = btn.getAttribute("data-month");
+        this.selectedMonth = m;
         this.renderTabTimeRhythm();
       };
     });
@@ -1200,12 +1863,15 @@ class BitChordPulseApp {
 
     if (prevBtn) {
       prevBtn.onclick = () => {
-        const idx = this.availableMonths.indexOf(this.selectedMonth);
+        const curr = (!this.selectedMonth || this.selectedMonth === "all")
+          ? (this.availableMonths?.length > 0 ? this.availableMonths[this.availableMonths.length - 1] : null)
+          : this.selectedMonth;
+        const idx = this.availableMonths ? this.availableMonths.indexOf(curr) : -1;
         if (idx > 0) {
           this.selectedMonth = this.availableMonths[idx - 1];
           this.renderTabTimeRhythm();
-        } else if (this.selectedMonth === "all" && this.availableMonths.length > 0) {
-          this.selectedMonth = this.availableMonths[0];
+        } else if (idx === 0 && !isMonthCover) {
+          this.selectedMonth = "all";
           this.renderTabTimeRhythm();
         }
       };
@@ -1213,11 +1879,14 @@ class BitChordPulseApp {
 
     if (nextBtn) {
       nextBtn.onclick = () => {
-        const idx = this.availableMonths.indexOf(this.selectedMonth);
+        const curr = (!this.selectedMonth || this.selectedMonth === "all")
+          ? (this.availableMonths?.length > 0 ? this.availableMonths[0] : null)
+          : this.selectedMonth;
+        const idx = this.availableMonths ? this.availableMonths.indexOf(curr) : -1;
         if (idx >= 0 && idx < this.availableMonths.length - 1) {
           this.selectedMonth = this.availableMonths[idx + 1];
           this.renderTabTimeRhythm();
-        } else if (idx === this.availableMonths.length - 1) {
+        } else if (idx === this.availableMonths.length - 1 && !isMonthCover) {
           this.selectedMonth = "all";
           this.renderTabTimeRhythm();
         }
@@ -1251,24 +1920,37 @@ class BitChordPulseApp {
     const legendPeakLabel = document.getElementById("gh-legend-peak-label");
     if (!squaresGrid || !monthLabelsRow) return;
 
-    const year = 2026;
+    const year = parseInt(this.heatmapYear || (this.availableYears?.[this.availableYears.length - 1]) || 2026, 10);
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+    const totalDays = isLeapYear ? 366 : 365;
     let maxActiveMs = 0;
 
-    const datesMap = this.masterState.tracks.reduce((acc, t) => {
-      if (t.days) {
-        for (const [d, val] of Object.entries(t.days)) {
-          if (!acc[d]) acc[d] = { ms: 0, plays: 0, topTrack: t };
-          acc[d].ms += val.ms || 0;
-          acc[d].plays += val.plays || 0;
-          if (acc[d].ms > maxActiveMs) maxActiveMs = acc[d].ms;
-          if (val.ms > (acc[d].topMs || 0)) {
-            acc[d].topMs = val.ms;
-            acc[d].topTrack = t;
+    const datesMap = {};
+    const dayLedger = this.masterState.dayLedger || {};
+
+    // 1. Seed from authoritative day ledger
+    for (const [d, l] of Object.entries(dayLedger)) {
+      datesMap[d] = { ms: Number(l.ms) || 0, plays: Number(l.plays) || 0, topTrack: null, topMs: 0 };
+      if (datesMap[d].ms > maxActiveMs) maxActiveMs = datesMap[d].ms;
+    }
+
+    // 2. Attach top track and fallback dates from tracks
+    if (this.masterState.tracks) {
+      this.masterState.tracks.forEach(t => {
+        if (t.days) {
+          for (const [d, val] of Object.entries(t.days)) {
+            if (!datesMap[d]) {
+              datesMap[d] = { ms: val.ms || 0, plays: val.plays || 0, topTrack: t, topMs: 0 };
+            }
+            if ((val.ms || 0) > (datesMap[d].topMs || 0)) {
+              datesMap[d].topMs = val.ms;
+              datesMap[d].topTrack = t;
+            }
+            if (datesMap[d].ms > maxActiveMs) maxActiveMs = datesMap[d].ms;
           }
         }
-      }
-      return acc;
-    }, {});
+      });
+    }
 
     if (legendPeakLabel) {
       legendPeakLabel.textContent = `More (${(maxActiveMs / 3600000).toFixed(1)}h)`;
@@ -1278,7 +1960,6 @@ class BitChordPulseApp {
     const startDate = new Date(year, 0, 1);
     const startDayOfWeek = (startDate.getDay() + 6) % 7;
 
-    const totalDays = 365;
     let gridHtml = "";
 
     for (let i = 0; i < startDayOfWeek; i++) {
@@ -1397,7 +2078,23 @@ class BitChordPulseApp {
     const container = document.getElementById("cal-month-days-grid");
     if (!container) return;
 
-    const monthStr = this.selectedMonth === "all" ? this.availableMonths[this.availableMonths.length - 1] : this.selectedMonth;
+    if (!this.availableMonths || this.availableMonths.length === 0) {
+      container.innerHTML = `<div style="padding:24px; color:var(--text-tertiary); text-align:center; grid-column:1/-1;">No monthly records found</div>`;
+      return;
+    }
+
+    let monthStr = this.selectedMonth;
+    if (!monthStr || monthStr === "all") {
+      monthStr = this.availableMonths[this.availableMonths.length - 1];
+    }
+
+    if (!monthStr || !monthStr.includes("-")) return;
+
+    // Filter specifically for this month so month's dates and tracks are fully populated
+    const monthState = (monthStr === this.selectedMonth && filteredMonth && filteredMonth.dates)
+      ? filteredMonth
+      : PulseAnalytics.filterState(this.masterState, monthStr, false);
+
     const [yearStr, mStr] = monthStr.split("-");
     const year = parseInt(yearStr, 10);
     const month = parseInt(mStr, 10) - 1;
@@ -1405,7 +2102,7 @@ class BitChordPulseApp {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const totalDaysInMonth = lastDay.getDate();
-    const startDayOfWeek = (firstDay.getDay() + 6) % 7;
+    const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Mon=0, Sun=6
 
     let html = "";
     for (let i = 0; i < startDayOfWeek; i++) {
@@ -1413,25 +2110,29 @@ class BitChordPulseApp {
     }
 
     for (let day = 1; day <= totalDaysInMonth; day++) {
-      const dateStr = `${yearStr}-${mStr.padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-      const dayData = filteredMonth.dates[dateStr];
+      const dateStr = `${yearStr}-${mStr.padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const dayData = monthState.dates ? monthState.dates[dateStr] : null;
       const isSelected = dateStr === this.selectedDayDate ? "selected" : "";
 
       if (dayData && dayData.ms > 0) {
-        const topTrack = [...dayData.tracks].sort((a, b) => b.ms - a.ms)[0];
-        const artUrl = artEngine.getTrackArtworkUrl(topTrack, this.masterState.artMap);
+        const sortedTracks = Array.isArray(dayData.tracks)
+          ? [...dayData.tracks].sort((a, b) => (b.ms || 0) - (a.ms || 0))
+          : [];
+        const topTrack = sortedTracks.length > 0 ? sortedTracks[0] : null;
         const mins = Math.round(dayData.ms / 60000);
+        const topTitle = topTrack && topTrack.title ? ` • #1: ${topTrack.title}` : "";
+        const artUrl = topTrack ? artEngine.getTrackArtworkUrl(topTrack, this.masterState.artMap) : "";
 
         html += `
-          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: ${mins}m (${dayData.plays}p) - #1: ${topTrack.title}">
-            <img class="month-cell-bg-art" src="${artUrl}" alt="" />
+          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: ${mins}m (${dayData.plays || 0} plays)${topTitle}">
+            ${artUrl ? `<img class="month-cell-bg-art" src="${artUrl}" alt="" />` : `<div class="month-cell-bg-art" style="background:rgba(250,36,60,0.18);"></div>`}
             <span class="month-cell-day-num">${day}</span>
             <span class="month-cell-min-badge">${mins}m</span>
           </div>
         `;
       } else {
         html += `
-          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}">
+          <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: 0 mins">
             <span class="month-cell-day-num" style="background:transparent; color:rgba(255,255,255,0.4);">${day}</span>
           </div>
         `;
@@ -1448,10 +2149,20 @@ class BitChordPulseApp {
         this.selectCalendarDay(dateStr);
       };
     });
+
+    if (this.selectedDayDate && this.selectedDayDate.startsWith(monthStr)) {
+      this.selectCalendarDay(this.selectedDayDate);
+    }
   }
 
   selectCalendarDay(dateStr) {
     this.selectedDayDate = dateStr;
+    const dayIdx = this.availableDays ? this.availableDays.indexOf(dateStr) : -1;
+    if (dayIdx !== -1) {
+      const maxStart = Math.max(0, this.availableDays.length - 5);
+      this.dailyWindowStart = Math.min(maxStart, Math.max(0, Math.floor(dayIdx / 5) * 5));
+    }
+
     const dateTitle = document.getElementById("inspector-selected-date");
     const statsEl = document.getElementById("inspector-selected-stats");
     const listEl = document.getElementById("inspector-selected-tracks");
@@ -1480,7 +2191,7 @@ class BitChordPulseApp {
       if (dayData.tracks.length === 0) {
         listEl.innerHTML = `
           <div style="font-size:13px; color:var(--text-tertiary); text-align:center; padding:20px; grid-column:1/-1;">
-            No songs recorded on this date.
+            ${dayData.totalMs > 0 ? `Device playback session logged: ${dayData.formattedTime} (${dayData.totalPlays} plays)` : `No listening recorded on this date.`}
           </div>
         `;
         return;
@@ -1739,8 +2450,8 @@ class BitChordPulseApp {
   async renderTabArtists(filtered) {
     const data = PulseAnalytics.computeArtistLeaderboard(filtered, "primary");
 
-    // 1. Interactive Artist Gravity Constellation Canvas
-    this.renderArtistConstellation(data.leaderboard);
+    // 1. Interactive Artist Gravity Constellation Canvas (Collaborations & Sonic Worlds)
+    this.renderArtistConstellation(data.leaderboard, filtered);
 
     // 2. Top 3 Podium Cards
     const podiumEl = document.getElementById("artists-podium-cards");
@@ -1802,7 +2513,7 @@ class BitChordPulseApp {
     }
   }
 
-  renderArtistConstellation(artistsList) {
+  renderArtistConstellation(artistsList, filteredState) {
     const canvas = document.getElementById("artist-constellation-canvas");
     if (!canvas) return;
 
@@ -1811,36 +2522,117 @@ class BitChordPulseApp {
       this.constellationAnimId = null;
     }
 
+    this._lastArtistLeaderboard = artistsList;
+    this._lastFilteredArtists = filteredState;
+
+    if (!this._constellationResizeBound) {
+      this._constellationResizeBound = true;
+      window.addEventListener("resize", () => {
+        if (this.currentTab === "artists" && this._lastArtistLeaderboard) {
+          this.renderArtistConstellation(this._lastArtistLeaderboard, this._lastFilteredArtists);
+        }
+      });
+    }
+
+    const bannerEl = document.getElementById("constellation-hover-banner");
+    const bannerText = document.getElementById("constellation-banner-text");
+
     const rect = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const width = rect.width;
-    const height = rect.height;
+    const width = rect.width > 0 ? rect.width : 900;
+    const height = rect.height > 0 ? rect.height : 540;
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
 
-    const topArtists = artistsList.slice(0, 12);
+    const topArtists = (artistsList || []).slice(0, 12);
     if (topArtists.length === 0) return;
 
-    // Grid-spaced jittered initial placement across full canvas area to prevent central clumping
-    const cols = width > 768 ? 4 : (width > 480 ? 3 : 2);
-    const rows = Math.ceil(topArtists.length / cols);
-    const cellW = width / cols;
-    const cellH = height / rows;
+    const allTracks = (filteredState && filteredState.tracks && filteredState.tracks.length > 0)
+      ? filteredState.tracks
+      : (this.masterState?.tracks || []);
+
+    // 1. Identify Cultural Worlds & Exact Artist Matcher
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const trackMatchesArtist = (t, artistName) => {
+      const norm = artistName.toLowerCase().trim();
+      if (t.artists && t.artists.some(a => a.toLowerCase().trim() === norm)) return true;
+      if (t.primaryArtist && t.primaryArtist.toLowerCase().trim() === norm) return true;
+      if (norm === "a.r. rahman") {
+        if (t.artists && t.artists.some(a => a.toLowerCase().includes("rahman"))) return true;
+        if (t.artist && t.artist.toLowerCase().includes("rahman")) return true;
+      }
+      const regex = new RegExp("(^|[^a-zA-Z0-9])" + escapeRegex(artistName) + "($|[^a-zA-Z0-9])", "i");
+      return regex.test(t.artist || "") || regex.test(t.title || "");
+    };
+
+    // 2. Precompute Real Direct Collaborations among Top Artists
+    const collaborationEdges = [];
+    const collabLookup = new Map(); // artistIndex -> Map(otherIndex -> edge)
+
+    for (let i = 0; i < topArtists.length; i++) {
+      collabLookup.set(i, new Map());
+    }
+
+    for (let i = 0; i < topArtists.length; i++) {
+      for (let j = i + 1; j < topArtists.length; j++) {
+        const nameA = topArtists[i].name;
+        const nameB = topArtists[j].name;
+        const sharedTracks = [];
+
+        allTracks.forEach(t => {
+          if (trackMatchesArtist(t, nameA) && trackMatchesArtist(t, nameB)) {
+            sharedTracks.push(t.title);
+          }
+        });
+
+        if (sharedTracks.length > 0) {
+          const uniqueTitles = Array.from(new Set(sharedTracks));
+          const edge = {
+            i,
+            j,
+            artistA: nameA,
+            artistB: nameB,
+            count: uniqueTitles.length,
+            tracks: uniqueTitles
+          };
+          collaborationEdges.push(edge);
+          collabLookup.get(i).set(j, edge);
+          collabLookup.get(j).set(i, edge);
+        }
+      }
+    }
+
+    // 3. Cultural World Galactic Centers & Node Physics Initialization
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    const worldAnchors = {
+      "Indian Melodies & Indie": { x: centerX + width * 0.08, y: centerY + height * 0.04, color: "#FA243C" },
+      "Western Indie & Pop": { x: centerX - width * 0.28, y: centerY - height * 0.12, color: "#FF8A9E" },
+      "J-Pop, Anime & Vocaloid": { x: centerX - width * 0.24, y: centerY + height * 0.26, color: "#FF5E7E" },
+      default: { x: centerX, y: centerY, color: "#FA243C" }
+    };
 
     const nodes = topArtists.map((a, i) => {
-      // Radius scaled smoothly from 42px (#1) down to 24px (#12)
-      const radius = Math.round(24 + (1 - i / topArtists.length) * 18);
-      const col = i % cols;
-      const row = Math.floor(i / cols);
+      const worldInfo = PulseAnalytics.classifyCulturalWorld({ artist: a.name, title: "" });
+      const worldName = worldInfo?.name || "Indian Melodies & Indie";
+      const worldColor = worldInfo?.color || "#FA243C";
+      const anchor = worldAnchors[worldName] || worldAnchors.default;
 
-      const x = Math.max(radius + 20, Math.min(width - radius - 20, cellW * (col + 0.5) + (Math.random() - 0.5) * (cellW * 0.25)));
-      const y = Math.max(radius + 36, Math.min(height - radius - 36, cellH * (row + 0.5) + (Math.random() - 0.5) * (cellH * 0.25)));
+      // Visual Hierarchy sizing
+      let radius = 28;
+      if (i === 0) radius = 44; // #1 Top Artist
+      else if (i < 3) radius = 38; // #2, #3
+      else if (i < 7) radius = 33; // #4 - #7
 
-      const vx = (Math.random() - 0.5) * 0.35;
-      const vy = (Math.random() - 0.5) * 0.35;
+      // Smooth initial celestial dispersal around galaxy anchor
+      const angle = (i * 1.61803398875 * 2 * Math.PI) % (2 * Math.PI);
+      const distFromAnchor = 35 + (i * 18);
+      const x = Math.max(radius + 30, Math.min(width - radius - 30, anchor.x + Math.cos(angle) * distFromAnchor));
+      const y = Math.max(radius + 40, Math.min(height - radius - 45, anchor.y + Math.sin(angle) * distFromAnchor));
 
       const img = new Image();
       artEngine.getArtistPortrait(a.name, this.masterState.searchHistory, this.masterState.portraitMap, a.topTracks)
@@ -1848,19 +2640,69 @@ class BitChordPulseApp {
 
       return {
         ...a,
+        nodeIndex: i,
         rank: a.rank || (i + 1),
+        worldName,
+        worldColor,
+        anchorX: anchor.x,
+        anchorY: anchor.y,
         x,
         y,
-        vx,
-        vy,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
         radius,
         img
       };
     });
 
+    // Link node references to edges
+    collaborationEdges.forEach(edge => {
+      edge.nodeA = nodes[edge.i];
+      edge.nodeB = nodes[edge.j];
+    });
+
+    // 4. Mouse Interactions & Dynamic Hover Banner
     let hoveredNode = null;
+    let hoveredEdge = null;
     let draggedNode = null;
     let dragOffset = { x: 0, y: 0 };
+
+    const distToSegment = (px, py, x1, y1, x2, y2) => {
+      const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+      if (l2 === 0) return Math.hypot(px - x1, py - y1);
+      let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+    };
+
+    const updateHoverBanner = () => {
+      if (!bannerText || !bannerEl) return;
+
+      if (hoveredNode) {
+        const topCollabs = [];
+        collabLookup.get(hoveredNode.nodeIndex).forEach((edge, otherIdx) => {
+          topCollabs.push({ name: nodes[otherIdx].name, count: edge.count });
+        });
+        topCollabs.sort((a, b) => b.count - a.count);
+
+        if (topCollabs.length > 0) {
+          const listStr = topCollabs.map(c => `${c.name} (${c.count} track${c.count > 1 ? "s" : ""})`).join(", ");
+          bannerText.innerHTML = `🤝 <strong>${hoveredNode.name}</strong> • ${topCollabs.length} Direct Collaborator${topCollabs.length > 1 ? "s" : ""} in Top 12: ${listStr} • <span style="opacity:0.75">Click to view profile</span>`;
+        } else {
+          bannerText.innerHTML = `🎵 <strong>${hoveredNode.name}</strong> • ${hoveredNode.worldName} • ${hoveredNode.hours}h • ${hoveredNode.plays} plays • <span style="opacity:0.75">Click to view profile</span>`;
+        }
+        bannerEl.classList.add("active");
+      } else if (hoveredEdge) {
+        const trackSamples = hoveredEdge.tracks.slice(0, 3).join(", ");
+        const moreCount = hoveredEdge.tracks.length - 3;
+        const moreStr = moreCount > 0 ? ` + ${moreCount} more` : "";
+        bannerText.innerHTML = `🤝 <strong>${hoveredEdge.artistA} &amp; ${hoveredEdge.artistB}</strong> • ${hoveredEdge.count} Shared Songs (${trackSamples}${moreStr})`;
+        bannerEl.classList.add("active");
+      } else {
+        bannerText.innerHTML = `Hover an artist or collaboration line to reveal shared tracks &amp; musical connections`;
+        bannerEl.classList.remove("active");
+      }
+    };
 
     canvas.onmousemove = e => {
       const crect = canvas.getBoundingClientRect();
@@ -1875,16 +2717,36 @@ class BitChordPulseApp {
         return;
       }
 
+      // 1. Check node hover
       hoveredNode = null;
       for (const node of nodes) {
-        const dx = node.x - mx;
-        const dy = node.y - my;
-        if (Math.hypot(dx, dy) < node.radius + 8) {
+        if (Math.hypot(node.x - mx, node.y - my) <= node.radius + 10) {
           hoveredNode = node;
           break;
         }
       }
-      canvas.style.cursor = hoveredNode ? "pointer" : "default";
+
+      // 2. If no node hovered, check collaboration edge hover
+      hoveredEdge = null;
+      if (!hoveredNode) {
+        for (const edge of collaborationEdges) {
+          const d = distToSegment(mx, my, edge.nodeA.x, edge.nodeA.y, edge.nodeB.x, edge.nodeB.y);
+          if (d <= 14) {
+            hoveredEdge = edge;
+            break;
+          }
+        }
+      }
+
+      canvas.style.cursor = (hoveredNode || hoveredEdge) ? "pointer" : "default";
+      updateHoverBanner();
+    };
+
+    canvas.onmouseleave = () => {
+      hoveredNode = null;
+      hoveredEdge = null;
+      canvas.style.cursor = "default";
+      updateHoverBanner();
     };
 
     canvas.onmousedown = e => {
@@ -1892,7 +2754,7 @@ class BitChordPulseApp {
       const mx = e.clientX - crect.left;
       const my = e.clientY - crect.top;
       for (const node of nodes) {
-        if (Math.hypot(node.x - mx, node.y - my) <= node.radius + 8) {
+        if (Math.hypot(node.x - mx, node.y - my) <= node.radius + 10) {
           draggedNode = node;
           dragOffset.x = node.x - mx;
           dragOffset.y = node.y - my;
@@ -1902,9 +2764,7 @@ class BitChordPulseApp {
     };
 
     const handleMouseUp = () => {
-      if (draggedNode) {
-        draggedNode = null;
-      }
+      draggedNode = null;
     };
     window.addEventListener("mouseup", handleMouseUp);
 
@@ -1931,101 +2791,229 @@ class BitChordPulseApp {
       }
     };
 
+    let animTime = 0;
+
     const animate = () => {
+      if (this.currentTab !== "artists") {
+        this.constellationAnimId = null;
+        return;
+      }
+      animTime += 0.016;
       ctx.clearRect(0, 0, width, height);
 
-      // 1. Multi-body collision separation & physics
+      // --- 1. Physics Engine ---
+      // A. Collaborative Spring Attraction
+      collaborationEdges.forEach(edge => {
+        const a = edge.nodeA;
+        const b = edge.nodeB;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const targetDist = 165 - Math.min(35, edge.count * 1.5);
+        const springForce = (dist - targetDist) * 0.00045 * Math.min(2.5, 1 + edge.count * 0.08);
+
+        if (a !== draggedNode) {
+          a.vx += (dx / dist) * springForce;
+          a.vy += (dy / dist) * springForce;
+        }
+        if (b !== draggedNode) {
+          b.vx -= (dx / dist) * springForce;
+          b.vy -= (dy / dist) * springForce;
+        }
+      });
+
+      // B. Galactic Cluster Anchor Attraction (world gravitational center)
+      nodes.forEach(node => {
+        if (node !== draggedNode) {
+          const toAnchorX = node.anchorX - node.x;
+          const toAnchorY = node.anchorY - node.y;
+          node.vx += toAnchorX * 0.00035;
+          node.vy += toAnchorY * 0.00035;
+
+          // Gentle ambient celestial float
+          node.vx += Math.cos(animTime * 0.8 + node.nodeIndex) * 0.03;
+          node.vy += Math.sin(animTime * 0.8 + node.nodeIndex) * 0.03;
+        }
+      });
+
+      // C. Multi-pass Hard Collision Repulsion (strictly prevents label & portrait overlapping)
+      for (let iter = 0; iter < 4; iter++) {
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i];
+            const b = nodes[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy) || 0.001;
+            const minDist = a.radius + b.radius + 44; // Generous buffer for labels, badges and shadows
+
+            if (dist < minDist) {
+              const overlap = minDist - dist;
+              const nx = dx / dist;
+              const ny = dy / dist;
+              const factor = 0.5;
+              if (a !== draggedNode) {
+                a.x -= nx * overlap * factor;
+                a.y -= ny * overlap * factor;
+                a.vx -= nx * 0.25;
+                a.vy -= ny * 0.25;
+              }
+              if (b !== draggedNode) {
+                b.x += nx * overlap * factor;
+                b.y += ny * overlap * factor;
+                b.vx += nx * 0.25;
+                b.vy += ny * 0.25;
+              }
+            }
+          }
+        }
+      }
+
+      // D. Velocity integration, damping & boundary enforcement
+      nodes.forEach(node => {
+        if (node !== draggedNode) {
+          node.vx *= 0.88;
+          node.vy *= 0.88;
+          node.x += node.vx;
+          node.y += node.vy;
+
+          const padX = node.radius + 28;
+          const padY = node.radius + 45;
+          if (node.x < padX) { node.x = padX; node.vx = Math.abs(node.vx) * 0.5; }
+          if (node.x > width - padX) { node.x = width - padX; node.vx = -Math.abs(node.vx) * 0.5; }
+          if (node.y < padY) { node.y = padY; node.vy = Math.abs(node.vy) * 0.5; }
+          if (node.y > height - padY) { node.y = height - padY; node.vy = -Math.abs(node.vy) * 0.5; }
+        }
+      });
+
+      // --- 2. Render Layer 1: Ethereal Galaxy Filaments (Shared Sonic Worlds) ---
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i];
           const b = nodes[j];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.hypot(dx, dy) || 0.001;
-          const minDist = a.radius + b.radius + 32; // Buffer to prevent label/pill collision
+          if (a.worldName === b.worldName) {
+            const isHoveredWorld = hoveredNode && (hoveredNode.worldName === a.worldName);
+            const isDimmed = hoveredNode && !isHoveredWorld;
+            const alpha = isHoveredWorld ? 0.22 : (isDimmed ? 0.03 : 0.08);
 
-          if (dist < minDist) {
-            const overlap = minDist - dist;
-            const nx = dx / dist;
-            const ny = dy / dist;
-            const force = overlap * 0.08;
-            if (a !== draggedNode) {
-              a.vx -= nx * force;
-              a.vy -= ny * force;
-            }
-            if (b !== draggedNode) {
-              b.vx += nx * force;
-              b.vy += ny * force;
-            }
-          }
-        }
-      }
-
-      // 2. Connecting constellation filaments
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[j].x - nodes[i].x;
-          const dy = nodes[j].y - nodes[i].y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < 170) {
+            ctx.save();
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(250, 36, 60, ${0.22 * (1 - dist / 170)})`;
+            ctx.setLineDash([3, 7]);
+            ctx.strokeStyle = a.worldColor;
+            ctx.globalAlpha = alpha;
             ctx.lineWidth = 1;
-            ctx.moveTo(nodes[i].x, nodes[i].y);
-            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
             ctx.stroke();
+            ctx.restore();
           }
         }
       }
 
-      // 3. Update & render each artist node
-      nodes.forEach(node => {
-        if (node !== draggedNode) {
-          // Center gravity
-          node.vx += (width / 2 - node.x) * 0.0002;
-          node.vy += (height / 2 - node.y) * 0.0002;
+      // --- 3. Render Layer 2: Direct Collaborations (Solid Crimson Glowing Lines) ---
+      collaborationEdges.forEach(edge => {
+        const a = edge.nodeA;
+        const b = edge.nodeB;
+        const isHovered = (hoveredEdge === edge) ||
+          (hoveredNode && (hoveredNode === a || hoveredNode === b));
+        const isDimmed = hoveredNode && !isHovered;
 
-          // Gentle ambient float
-          node.vx += (Math.random() - 0.5) * 0.03;
-          node.vy += (Math.random() - 0.5) * 0.03;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
 
-          // Velocity damping
-          node.vx *= 0.94;
-          node.vy *= 0.94;
+        if (isHovered) {
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = Math.max(3.2, 2.2 + edge.count * 0.12);
+          ctx.shadowColor = "#FA243C";
+          ctx.shadowBlur = 18;
+          ctx.globalAlpha = 1.0;
+        } else if (isDimmed) {
+          ctx.strokeStyle = "rgba(250, 36, 60, 0.12)";
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.2;
+        } else {
+          ctx.strokeStyle = "rgba(250, 36, 60, 0.85)";
+          ctx.lineWidth = Math.min(3.5, 1.5 + edge.count * 0.1);
+          ctx.shadowColor = "rgba(250, 36, 60, 0.6)";
+          ctx.shadowBlur = 8;
+          ctx.globalAlpha = 0.88;
+        }
+        ctx.stroke();
+        ctx.restore();
 
-          // Velocity clamp
-          const spd = Math.hypot(node.vx, node.vy);
-          if (spd > 1.2) {
-            node.vx = (node.vx / spd) * 1.2;
-            node.vy = (node.vy / spd) * 1.2;
+        // Midpoint Collaboration Badge (Badge pill showing song count)
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+
+        if (isHovered || edge.count >= 3) {
+          ctx.save();
+          const badgeText = `${edge.count} track${edge.count > 1 ? "s" : ""}`;
+          ctx.font = "bold 9px Inter, -apple-system, sans-serif";
+          const tw = ctx.measureText(badgeText).width;
+          const pw = tw + 12;
+          const ph = 16;
+
+          if (isHovered) {
+            ctx.fillStyle = "#FA243C";
+            ctx.shadowColor = "#FA243C";
+            ctx.shadowBlur = 12;
+            drawPill(ctx, midX - pw / 2, midY - ph / 2, pw, ph, 8);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(badgeText, midX, midY + 0.5);
+          } else if (!isDimmed) {
+            ctx.fillStyle = "rgba(18, 18, 24, 0.88)";
+            ctx.strokeStyle = "rgba(250, 36, 60, 0.7)";
+            ctx.lineWidth = 1;
+            drawPill(ctx, midX - pw / 2, midY - ph / 2, pw, ph, 8);
+            ctx.stroke();
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(badgeText, midX, midY + 0.5);
           }
+          ctx.restore();
+        }
+      });
 
-          node.x += node.vx;
-          node.y += node.vy;
+      // --- 4. Render Layer 3: Artist Nodes (Portraits, Badges & Labels) ---
+      nodes.forEach(node => {
+        const isHovered = (hoveredNode === node);
+        const isConnected = hoveredNode && collabLookup.get(hoveredNode.nodeIndex).has(node.nodeIndex);
+        const isDimmed = hoveredNode && !isHovered && !isConnected;
 
-          // Safe boundary bounce
-          const padX = node.radius + 18;
-          const padY = node.radius + 38;
-          if (node.x < padX) { node.x = padX; node.vx = Math.abs(node.vx) * 0.7; }
-          if (node.x > width - padX) { node.x = width - padX; node.vx = -Math.abs(node.vx) * 0.7; }
-          if (node.y < padY) { node.y = padY; node.vy = Math.abs(node.vy) * 0.7; }
-          if (node.y > height - padY) { node.y = height - padY; node.vy = -Math.abs(node.vy) * 0.7; }
+        ctx.save();
+        if (isDimmed) {
+          ctx.globalAlpha = 0.22;
         }
 
-        const isHovered = hoveredNode === node;
-        const r = isHovered ? node.radius * 1.18 : node.radius;
+        const r = isHovered ? node.radius * 1.15 : node.radius;
 
-        // Circular portrait
+        // Circular portrait with glow
         ctx.save();
-        ctx.shadowColor = isHovered ? "#FA243C" : "rgba(250, 36, 60, 0.5)";
-        ctx.shadowBlur = isHovered ? 24 : 10;
+        if (isHovered) {
+          ctx.shadowColor = "#FA243C";
+          ctx.shadowBlur = 28;
+        } else if (isConnected) {
+          ctx.shadowColor = "#FF5E7E";
+          ctx.shadowBlur = 18;
+        } else {
+          ctx.shadowColor = "rgba(250, 36, 60, 0.45)";
+          ctx.shadowBlur = 10;
+        }
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
         ctx.fillStyle = "#16161D";
         ctx.fill();
-        ctx.lineWidth = isHovered ? 3 : (node.rank === 1 ? 2.5 : 1.5);
-        ctx.strokeStyle = isHovered ? "#FFFFFF" : (node.rank === 1 ? "#FF5E7E" : "rgba(250, 36, 60, 0.85)");
+
+        ctx.lineWidth = isHovered ? 3.5 : (isConnected ? 2.5 : (node.rank === 1 ? 2.5 : 1.5));
+        ctx.strokeStyle = isHovered
+          ? "#FFFFFF"
+          : (isConnected ? "#FF5E7E" : (node.rank === 1 ? "#FF5E7E" : "rgba(250, 36, 60, 0.85)"));
         ctx.stroke();
         ctx.clip();
 
@@ -2035,51 +3023,55 @@ class BitChordPulseApp {
           ctx.fillStyle = "#1e1e28";
           ctx.fillRect(node.x - r, node.y - r, r * 2, r * 2);
           ctx.font = "bold 14px Inter";
-          ctx.fillStyle = "rgba(255,255,255,0.7)";
+          ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(node.name.slice(0, 2).toUpperCase(), node.x, node.y);
         }
         ctx.restore();
 
-        // Rank Badge Pill ON TOP of Bubble
-        const badgeW = 28;
-        const badgeH = 15;
+        // Rank Badge Pill above portrait
+        const badgeW = 32;
+        const badgeH = 16;
         const badgeX = node.x - badgeW / 2;
-        const badgeY = node.y - r - 8;
+        const badgeY = node.y - r - 9;
 
         ctx.save();
-        ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+        ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
         ctx.shadowBlur = 4;
-        ctx.fillStyle = isHovered ? "#FFFFFF" : (node.rank <= 3 ? "#FA243C" : "rgba(250, 36, 60, 0.88)");
-        drawPill(ctx, badgeX, badgeY, badgeW, badgeH, 7);
+        ctx.fillStyle = isHovered
+          ? "#FFFFFF"
+          : (node.rank <= 3 ? "#FA243C" : "rgba(250, 36, 60, 0.9)");
+        drawPill(ctx, badgeX, badgeY, badgeW, badgeH, 8);
         ctx.restore();
 
         ctx.save();
-        ctx.font = "bold 9px Inter, -apple-system, sans-serif";
+        ctx.font = "bold 9.5px Inter, -apple-system, sans-serif";
         ctx.fillStyle = isHovered ? "#FA243C" : "#FFFFFF";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(`#${node.rank}`, node.x, badgeY + badgeH / 2 + 0.5);
         ctx.restore();
 
-        // Artist Name & Hours Below Bubble
+        // Artist Name & Hours Below Portrait
         ctx.save();
         ctx.textAlign = "center";
         ctx.shadowColor = "rgba(0, 0, 0, 0.95)";
-        ctx.shadowBlur = 5;
+        ctx.shadowBlur = 6;
 
         let dispName = node.name;
         if (dispName.length > 15) dispName = dispName.slice(0, 14) + "…";
 
         ctx.font = isHovered ? "bold 12px Inter, -apple-system, sans-serif" : "600 11px Inter, -apple-system, sans-serif";
-        ctx.fillStyle = isHovered ? "#FFFFFF" : "rgba(255, 255, 255, 0.92)";
+        ctx.fillStyle = isHovered ? "#FFFFFF" : (isConnected ? "#FFFFFF" : "rgba(255, 255, 255, 0.92)");
         ctx.fillText(dispName, node.x, node.y + r + 15);
 
         ctx.font = "500 9.5px Inter, -apple-system, sans-serif";
-        ctx.fillStyle = isHovered ? "#FF6B81" : "rgba(255, 255, 255, 0.6)";
-        ctx.fillText(`${node.hours}h • ${node.plays}p`, node.x, node.y + r + 28);
+        ctx.fillStyle = isHovered ? "#FF6B81" : (isConnected ? "#FF6B81" : "rgba(255, 255, 255, 0.65)");
+        ctx.fillText(`${node.hours}h • ${node.plays} plays`, node.x, node.y + r + 28);
         ctx.restore();
+
+        ctx.restore(); // restores globalAlpha
       });
 
       this.constellationAnimId = requestAnimationFrame(animate);
@@ -2147,7 +3139,7 @@ class BitChordPulseApp {
   }
 
   renderLibraryToolbar() {
-    // 1. Subtab switcher
+    // 1. Subtab switcher (5 Subtabs: Songs, Albums, Daily Rituals, Single-Day Obsessions, Skipped/Partial)
     const switcherBtns = document.querySelectorAll("#library-view-switcher .time-pill-btn");
     switcherBtns.forEach(btn => {
       btn.onclick = () => {
@@ -2179,13 +3171,62 @@ class BitChordPulseApp {
       };
     }
 
-    // 3. Sort selector
-    const sortSelect = document.getElementById("library-sort-select");
-    if (sortSelect) {
-      sortSelect.onchange = e => {
-        this.librarySortBy = e.target.value;
-        this.filterAndRenderLibrary();
+    // 3. Custom Apple Music Liquid Glass Dropdown Selector
+    const wrap = document.getElementById("library-sort-dropdown-wrap");
+    const trigger = document.getElementById("sort-dropdown-trigger");
+    const menu = document.getElementById("sort-dropdown-menu");
+    const label = document.getElementById("sort-selected-label");
+    const controlCenter = document.querySelector(".library-control-center");
+
+    const closeDropdown = () => {
+      if (menu) menu.classList.add("hidden");
+      if (trigger) {
+        trigger.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+      if (wrap) wrap.classList.remove("open");
+      if (controlCenter) controlCenter.classList.remove("dropdown-open");
+    };
+
+    if (trigger && menu) {
+      trigger.onclick = e => {
+        e.stopPropagation();
+        const isOpen = !menu.classList.contains("hidden");
+        menu.classList.toggle("hidden", isOpen);
+        trigger.classList.toggle("open", !isOpen);
+        trigger.setAttribute("aria-expanded", String(!isOpen));
+        if (wrap) wrap.classList.toggle("open", !isOpen);
+        if (controlCenter) controlCenter.classList.toggle("dropdown-open", !isOpen);
       };
+
+      menu.querySelectorAll(".glass-select-option").forEach(opt => {
+        opt.onclick = e => {
+          e.stopPropagation();
+          const val = opt.getAttribute("data-value");
+          const optText = opt.querySelector("span")?.textContent || val;
+          this.librarySortBy = val;
+
+          if (label) label.textContent = optText;
+          menu.querySelectorAll(".glass-select-option").forEach(o => o.classList.toggle("active", o === opt));
+
+          closeDropdown();
+          this.filterAndRenderLibrary();
+        };
+      });
+
+      if (!this._dropdownDocClickAttached) {
+        this._dropdownDocClickAttached = true;
+        document.addEventListener("click", ev => {
+          if (!ev.target.closest("#library-sort-dropdown-wrap")) {
+            closeDropdown();
+          }
+        });
+        document.addEventListener("keydown", ev => {
+          if (ev.key === "Escape") {
+            closeDropdown();
+          }
+        });
+      }
     }
 
     // 4. Cultural / Sonic World Filter Pills
@@ -2201,7 +3242,25 @@ class BitChordPulseApp {
   }
 
   filterAndRenderLibrary() {
-    let tracks = [...this.masterState.tracks];
+    // 1. Scoped tracks by active master timeframe
+    const filteredState = PulseAnalytics.filterState(this.masterState, this.currentTimeframe, false);
+    let tracks = [...filteredState.tracks];
+
+    // 2. Update Scope Indicator Pill
+    const scopeEl = document.getElementById("library-scope-indicator");
+    if (scopeEl) {
+      if (this.masterTimeMode === "all-time" || this.currentTimeframe === "all") {
+        scopeEl.textContent = "⚡ Scope: All-Time";
+      } else if (this.masterTimeMode === "yearly") {
+        scopeEl.textContent = `⚡ Scope: Year ${this.selectedYear || "2026"}`;
+      } else if (this.masterTimeMode === "monthly") {
+        scopeEl.textContent = `⚡ Scope: ${this.formatMonthName(this.selectedMonth)}`;
+      } else if (this.masterTimeMode === "weekly") {
+        scopeEl.textContent = `⚡ Scope: ${this.formatWeekLabel(this.selectedWeekKey)}`;
+      } else if (this.masterTimeMode === "daily") {
+        scopeEl.textContent = `⚡ Scope: ${this.formatDateLong(this.selectedDayDate)}`;
+      }
+    }
 
     // Search query filter
     if (this.librarySearchQuery) {
@@ -2220,6 +3279,17 @@ class BitChordPulseApp {
       });
     }
 
+    // Helper for Single-Day Binge calculation
+    const getTrackBingeRatio = t => {
+      let maxD = 0;
+      if (t.days) {
+        for (const v of Object.values(t.days)) {
+          if ((v.ms || 0) > maxD) maxD = v.ms;
+        }
+      }
+      return t.ms > 0 ? (maxD / t.ms) : 0;
+    };
+
     // Sort tracks
     tracks.sort((a, b) => {
       if (this.librarySortBy === "hours-desc") return (b.ms || 0) - (a.ms || 0);
@@ -2229,6 +3299,11 @@ class BitChordPulseApp {
         const db = b.days ? Object.keys(b.days).length : 0;
         return db - da || (b.ms || 0) - (a.ms || 0);
       }
+      if (this.librarySortBy === "binge-desc") {
+        const ba = getTrackBingeRatio(a);
+        const bb = getTrackBingeRatio(b);
+        return bb - ba || (b.ms || 0) - (a.ms || 0);
+      }
       if (this.librarySortBy === "recent-desc") return (b.last || 0) - (a.last || 0);
       if (this.librarySortBy === "title-asc") return (a.title || "").localeCompare(b.title || "");
       return 0;
@@ -2236,13 +3311,14 @@ class BitChordPulseApp {
 
     const counter = document.getElementById("library-results-counter");
     if (counter) {
-      counter.textContent = `Showing ${tracks.length} of ${this.masterState.tracks.length} songs`;
+      counter.textContent = `Showing ${tracks.length} songs in scope`;
     }
 
-    // Switch view containers
+    // Switch view containers across all 5 subtabs
     document.getElementById("view-library-songs")?.classList.toggle("hidden", this.activeLibraryTab !== "all-songs");
     document.getElementById("view-library-albums")?.classList.toggle("hidden", this.activeLibraryTab !== "albums");
     document.getElementById("view-library-consistent")?.classList.toggle("hidden", this.activeLibraryTab !== "consistent");
+    document.getElementById("view-library-obsessions")?.classList.toggle("hidden", this.activeLibraryTab !== "obsessions");
     document.getElementById("view-library-skipped")?.classList.toggle("hidden", this.activeLibraryTab !== "skipped");
 
     if (this.activeLibraryTab === "all-songs") {
@@ -2251,6 +3327,8 @@ class BitChordPulseApp {
       this.renderLibraryAlbumsGrid(tracks);
     } else if (this.activeLibraryTab === "consistent") {
       this.renderLibraryConsistentList(tracks);
+    } else if (this.activeLibraryTab === "obsessions") {
+      this.renderLibraryObsessionsList(tracks);
     } else if (this.activeLibraryTab === "skipped") {
       this.renderLibrarySkippedList(tracks);
     }
@@ -2260,14 +3338,55 @@ class BitChordPulseApp {
     const container = document.getElementById("library-songs-rows");
     if (!container) return;
 
+    if (tracks.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 48px 16px; color: var(--text-secondary); font-size: 13.5px;">
+          No songs found matching your search or filters in this timeframe.
+        </div>
+      `;
+      return;
+    }
+
     const maxMs = tracks[0]?.ms || 1;
 
-    container.innerHTML = tracks.slice(0, 80).map((t, idx) => {
+    container.innerHTML = tracks.slice(0, 100).map((t, idx) => {
       const art = artEngine.getTrackArtworkUrl(t, this.masterState.artMap);
-      const mins = Math.round((t.ms || 0) / 60000);
-      const sharePct = Math.min(100, Math.max(4, Math.round(((t.ms || 0) / maxMs) * 100)));
-      const daysCount = t.days ? Math.min(8, Object.keys(t.days).length) : 0;
-      const dotsHtml = Array.from({ length: daysCount }).map(() => `<span class="consistency-dot"></span>`).join("");
+      const hoursText = (t.ms / 3600000).toFixed(1) + "h";
+      const daysCount = t.days ? Object.keys(t.days).length : 0;
+
+      // Single-Day Binge % calculation
+      let maxDayMs = 0;
+      if (t.days) {
+        for (const val of Object.values(t.days)) {
+          if ((val.ms || 0) > maxDayMs) maxDayMs = val.ms;
+        }
+      }
+      const bingePct = t.ms > 0 ? Math.min(100, Math.round((maxDayMs / t.ms) * 100)) : 100;
+
+      // Dynamic Right-side column based on active sort
+      let mainBadgeHtml = "";
+      let subStatHtml = "";
+
+      if (this.librarySortBy === "days-desc") {
+        // When Most Consistent (Days) is selected: streak day on top with plays and hours in small gray down
+        mainBadgeHtml = `<span class="loyalty-pill loyalty-pill-ritual">🌿 ${daysCount} Days</span>`;
+        subStatHtml = `<span class="track-sub-stat">${t.plays} plays • ${hoursText}</span>`;
+      } else if (this.librarySortBy === "binge-desc") {
+        // Single-day obsession badge with plays and hours in small gray down
+        mainBadgeHtml = `<span class="loyalty-pill loyalty-pill-binge">⚡ ${bingePct}% in 1 Day</span>`;
+        subStatHtml = `<span class="track-sub-stat">${t.plays} plays • ${hoursText}</span>`;
+      } else if (this.librarySortBy === "plays-desc") {
+        mainBadgeHtml = `<span class="track-plays-text">${t.plays} plays</span>`;
+        subStatHtml = `<span class="track-sub-stat">${hoursText} • ${daysCount} days</span>`;
+      } else if (this.librarySortBy === "recent-desc") {
+        const lastDate = t.last ? new Date(t.last).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Recent";
+        mainBadgeHtml = `<span class="track-plays-text">${lastDate}</span>`;
+        subStatHtml = `<span class="track-sub-stat">${t.plays} plays • ${hoursText}</span>`;
+      } else {
+        // hours-desc or title-asc
+        mainBadgeHtml = `<span class="track-plays-text">${hoursText}</span>`;
+        subStatHtml = `<span class="track-sub-stat">${t.plays} plays • ${daysCount} days</span>`;
+      }
 
       return `
         <div class="apple-track-row" data-track-id="${t.id}">
@@ -2281,12 +3400,9 @@ class BitChordPulseApp {
             <div class="track-row-artist">${t.artist}</div>
           </div>
           <div class="track-col-album">${t.album || "Single"}</div>
-          <div class="track-col-dots" title="${daysCount} active listening days">${dotsHtml}</div>
           <div class="track-col-plays-time">
-            <span class="track-plays-text">${t.plays} plays • ${mins}m</span>
-            <div class="track-share-bar-bg">
-              <div class="track-share-bar-fill" style="width:${sharePct}%"></div>
-            </div>
+            ${mainBadgeHtml}
+            ${subStatHtml}
           </div>
         </div>
       `;
@@ -2349,16 +3465,26 @@ class BitChordPulseApp {
     const container = document.getElementById("library-consistent-rows");
     if (!container) return;
 
-    const consistentTracks = [...tracks].sort((a, b) => {
-      const da = a.days ? Object.keys(a.days).length : 0;
-      const db = b.days ? Object.keys(b.days).length : 0;
-      return db - da || b.ms - a.ms;
-    });
+    const consistent = [...tracks]
+      .map(t => {
+        const daysCount = t.days ? Object.keys(t.days).length : 0;
+        return { ...t, daysCount };
+      })
+      .filter(t => t.daysCount >= 2)
+      .sort((a, b) => b.daysCount - a.daysCount || b.ms - a.ms);
 
-    container.innerHTML = consistentTracks.slice(0, 40).map((t, idx) => {
+    if (consistent.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 40px; color: var(--text-tertiary); font-size: 13px;">
+          No multi-day consistent songs recorded in this timeframe.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = consistent.slice(0, 60).map((t, idx) => {
       const art = artEngine.getTrackArtworkUrl(t, this.masterState.artMap);
-      const daysCount = t.days ? Object.keys(t.days).length : 0;
-      const mins = Math.round((t.ms || 0) / 60000);
+      const hoursText = (t.ms / 3600000).toFixed(1) + "h";
 
       return `
         <div class="apple-track-row" data-track-id="${t.id}">
@@ -2371,11 +3497,10 @@ class BitChordPulseApp {
             <div class="track-row-title">${t.title}</div>
             <div class="track-row-artist">${t.artist}</div>
           </div>
-          <div style="font-weight:700; color:var(--accent-crimson); font-size:13.5px;">
-            🔥 ${daysCount} Active Days
-          </div>
+          <div class="track-col-album">${t.album || "Single"}</div>
           <div class="track-col-plays-time">
-            <span class="track-plays-text">${t.plays} plays • ${mins}m</span>
+            <span class="loyalty-pill loyalty-pill-ritual">🌿 ${t.daysCount} Days</span>
+            <span class="track-sub-stat">${t.plays} plays • ${hoursText}</span>
           </div>
         </div>
       `;
@@ -2383,7 +3508,70 @@ class BitChordPulseApp {
 
     container.querySelectorAll(".apple-track-row").forEach(row => {
       const id = row.getAttribute("data-track-id");
-      const track = consistentTracks.find(x => x.id === id);
+      const track = consistent.find(x => x.id === id);
+      row.onclick = () => { if (track) this.openSongDeepDive(track); };
+    });
+  }
+
+  renderLibraryObsessionsList(tracks) {
+    const container = document.getElementById("library-obsessions-rows");
+    if (!container) return;
+
+    const obsessions = [...tracks]
+      .map(t => {
+        let maxDayMs = 0;
+        let peakDate = "";
+        if (t.days) {
+          for (const [d, val] of Object.entries(t.days)) {
+            if ((val.ms || 0) > maxDayMs) {
+              maxDayMs = val.ms;
+              peakDate = d;
+            }
+          }
+        }
+        const bingePct = t.ms > 0 ? Math.min(100, Math.round((maxDayMs / t.ms) * 100)) : 100;
+        return { ...t, bingePct, maxDayMs, peakDate };
+      })
+      .filter(t => t.bingePct >= 40 && (t.ms >= 10 * 60000 || t.plays >= 2))
+      .sort((a, b) => b.bingePct - a.bingePct || b.ms - a.ms);
+
+    if (obsessions.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 40px; color: var(--text-tertiary); font-size: 13px;">
+          No single-day binge obsessions found in this timeframe.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = obsessions.slice(0, 60).map((t, idx) => {
+      const art = artEngine.getTrackArtworkUrl(t, this.masterState.artMap);
+      const hoursText = (t.ms / 3600000).toFixed(1) + "h";
+      const peakFormatted = t.peakDate ? this.formatDateShort(t.peakDate) : "";
+
+      return `
+        <div class="apple-track-row" data-track-id="${t.id}">
+          <span class="track-col-rank">#${idx + 1}</span>
+          <div class="track-art-box">
+            <img src="${art}" alt="" />
+            <div class="track-hover-play">▶</div>
+          </div>
+          <div class="track-col-title-artist">
+            <div class="track-row-title">${t.title}</div>
+            <div class="track-row-artist">${t.artist} ${peakFormatted ? `<span style="color:var(--text-tertiary); font-size:11.5px;">• Peak on ${peakFormatted}</span>` : ""}</div>
+          </div>
+          <div class="track-col-album">${t.album || "Single"}</div>
+          <div class="track-col-plays-time">
+            <span class="loyalty-pill loyalty-pill-binge">⚡ ${t.bingePct}% in 1 Day</span>
+            <span class="track-sub-stat">${t.plays} plays • ${hoursText}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    container.querySelectorAll(".apple-track-row").forEach(row => {
+      const id = row.getAttribute("data-track-id");
+      const track = obsessions.find(x => x.id === id);
       row.onclick = () => { if (track) this.openSongDeepDive(track); };
     });
   }
@@ -2392,20 +3580,27 @@ class BitChordPulseApp {
     const container = document.getElementById("library-skipped-rows");
     if (!container) return;
 
-    const skippedTracks = tracks.filter(t => (t.ms || 0) > 0 && (t.plays || 0) === 0);
+    // Skipped / partial tracks: tracks with partial playtime or zero full completions
+    const skippedTracks = [...tracks]
+      .filter(t => (t.ms > 0 && t.plays === 0) || (t.skips && t.skips > 0) || (t.partials && t.partials > 0))
+      .sort((a, b) => (b.ms || 0) - (a.ms || 0));
 
-    if (skippedTracks.length === 0) {
+    // Fallback if no pure 0-play tracks: show lowest play-to-time ratio tracks
+    const displayList = skippedTracks.length > 0 ? skippedTracks : tracks.filter(t => t.plays <= 1 && t.ms > 0);
+
+    if (displayList.length === 0) {
       container.innerHTML = `
-        <div style="text-align:center; padding:40px; color:var(--text-tertiary); font-size:13px;">
-          No skipped or partial tracks matching current filters.
+        <div style="text-align: center; padding: 40px; color: var(--text-tertiary); font-size: 13px;">
+          No skipped or partial tracks recorded in this timeframe.
         </div>
       `;
       return;
     }
 
-    container.innerHTML = skippedTracks.slice(0, 40).map((t, idx) => {
+    container.innerHTML = displayList.slice(0, 60).map((t, idx) => {
       const art = artEngine.getTrackArtworkUrl(t, this.masterState.artMap);
-      const mins = ((t.ms || 0) / 60000).toFixed(1);
+      const mins = Math.round((t.ms || 0) / 60000);
+      const hoursText = (t.ms / 3600000).toFixed(1) + "h";
 
       return `
         <div class="apple-track-row" data-track-id="${t.id}">
@@ -2418,11 +3613,12 @@ class BitChordPulseApp {
             <div class="track-row-title">${t.title}</div>
             <div class="track-row-artist">${t.artist}</div>
           </div>
-          <div style="color:var(--accent-rose); font-size:12px; font-weight:600;">
-            Partial Listen (${mins}m)
-          </div>
+          <div class="track-col-album">${t.album || "Single"}</div>
           <div class="track-col-plays-time">
-            <span class="track-plays-text" style="color:var(--text-tertiary);">0 Completed Plays</span>
+            <span class="loyalty-pill loyalty-pill-binge" style="background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.75); border-color:rgba(255,255,255,0.12);">
+              ⚠️ ${mins}m Partial
+            </span>
+            <span class="track-sub-stat">${t.plays} completed • ${hoursText}</span>
           </div>
         </div>
       `;
@@ -2430,7 +3626,7 @@ class BitChordPulseApp {
 
     container.querySelectorAll(".apple-track-row").forEach(row => {
       const id = row.getAttribute("data-track-id");
-      const track = skippedTracks.find(x => x.id === id);
+      const track = displayList.find(x => x.id === id);
       row.onclick = () => { if (track) this.openSongDeepDive(track); };
     });
   }
@@ -2762,24 +3958,60 @@ class BitChordPulseApp {
       }
     });
 
-    // 2. Master Mode Switcher Buttons (Listen Now)
-    document.querySelectorAll("#ln-master-mode-switcher .master-pill-btn").forEach(btn => {
+    // 2. Master Mode Switcher Buttons (Universal across all tabs)
+    document.querySelectorAll("#global-master-mode-switcher .master-pill-btn, #ln-master-mode-switcher .master-pill-btn").forEach(btn => {
       btn.onclick = () => {
         const mode = btn.getAttribute("data-mode");
-        this.setListenNowMode(mode);
+        this.setMasterTimeMode(mode);
       };
     });
 
-    // 3. Timeframe selector buttons in header
-    const timePills = document.querySelectorAll(".time-segmented-pill .time-pill-btn");
-    timePills.forEach(pill => {
-      pill.onclick = () => {
-        timePills.forEach(p => p.classList.remove("active"));
-        pill.classList.add("active");
-        this.currentTimeframe = pill.getAttribute("data-timeframe");
-        this.renderApplication();
-      };
+    // 3. PWA Service Worker & Install App Prompt
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installBtn = document.getElementById("btn-header-install");
+      if (installBtn) {
+        installBtn.classList.remove("hidden");
+      }
     });
+
+    const installBtn = document.getElementById("btn-header-install");
+    if (installBtn) {
+      // Unhide install button if browser or standalone mode isn't already active
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      if (!isStandalone) {
+        installBtn.classList.remove("hidden");
+      }
+
+      installBtn.onclick = async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === "accepted") {
+            installBtn.classList.add("hidden");
+            this.showToast("Installed!", "BitChord Pulse is now installed on your device.", "success");
+          }
+          deferredPrompt = null;
+        } else {
+          const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+          if (isIos) {
+            this.showToast("Install App on iOS", "Tap the Safari Share button, then select 'Add to Home Screen'.", "info");
+          } else {
+            this.showToast("Install App", "To install on Desktop or Android, use your browser's install icon or menu.", "info");
+          }
+        }
+      };
+    }
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(err => {
+          console.warn("ServiceWorker registration failed:", err);
+        });
+      });
+    }
 
     // 4. Heatmap View Toggle (GitHub Matrix vs. Month Calendar Cover View)
     const heatmapViewBtns = document.querySelectorAll("#heatmap-view-toggle .view-toggle-btn");
@@ -2835,31 +4067,32 @@ class BitChordPulseApp {
     }
 
     // 8. Drag & Drop
-    window.addEventListener("dragover", e => e.preventDefault());
+    const dropzoneCard = document.getElementById("initial-empty-dropzone");
+    window.addEventListener("dragover", e => {
+      e.preventDefault();
+      if (dropzoneCard && !dropzoneCard.classList.contains("hidden")) {
+        dropzoneCard.classList.add("drag-hover");
+      }
+    });
+    window.addEventListener("dragleave", e => {
+      if (dropzoneCard && (!e.relatedTarget || e.relatedTarget === document.documentElement)) {
+        dropzoneCard.classList.remove("drag-hover");
+      }
+    });
     window.addEventListener("drop", async e => {
       e.preventDefault();
+      if (dropzoneCard) dropzoneCard.classList.remove("drag-hover");
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         await this.handleFileIngest(e.dataTransfer.files[0]);
       }
     });
-
-    // 9. Demo backup loader
-    document.querySelectorAll(".btn-load-demo-backup").forEach(btn => {
-      btn.onclick = async () => {
-        this.showToast("Loading Demo...", "Fetching repository backup", "info");
-        try {
-          let res = await fetch("./bitchord-backup.json");
-          if (!res.ok) res = await fetch("./bitchord-backup-2026-11-04.json");
-          if (!res.ok) throw new Error("Built-in demo backup not found.");
-          const rawJson = await res.json();
-          const diff = await pulseDB.syncBackup(rawJson, "bitchord-backup-demo.json");
-          await this.loadDatabase();
-          this.triggerSyncCelebration(diff);
-        } catch (err) {
-          this.showToast("Demo Error", err.message, "error");
+    if (dropzoneCard) {
+      dropzoneCard.onclick = e => {
+        if (!e.target.closest("button") && fileInput) {
+          fileInput.click();
         }
       };
-    });
+    }
 
     // 10. Drawer close
     const drawerCloseBtn = document.getElementById("drawer-artist-close");
@@ -2903,7 +4136,7 @@ class BitChordPulseApp {
     const resetBtn = document.getElementById("btn-reset-database");
     if (resetBtn) {
       resetBtn.onclick = async () => {
-        if (confirm("Reset and clear all BitChord Pulse records?")) {
+        if (confirm("Reset and clear all MuStats records?")) {
           await pulseDB.resetDatabase();
           location.reload();
         }
@@ -2913,6 +4146,19 @@ class BitChordPulseApp {
 
   switchAppTab(targetTab) {
     if (targetTab === this.currentTab) return;
+
+    // Toggle universal master time nav (hidden on time-rhythm, visible on others)
+    const masterNav = document.getElementById("universal-master-time-nav");
+    if (masterNav) {
+      masterNav.classList.toggle("hidden", targetTab === "time-rhythm");
+    }
+
+    if (this.currentTab === "artists" && targetTab !== "artists") {
+      if (this.constellationAnimId) {
+        cancelAnimationFrame(this.constellationAnimId);
+        this.constellationAnimId = null;
+      }
+    }
 
     document.querySelectorAll(".nav-tab-btn, .mobile-tab-btn").forEach(btn => {
       btn.classList.toggle("active", btn.getAttribute("data-tab") === targetTab);
@@ -2953,6 +4199,7 @@ class BitChordPulseApp {
     try {
       const text = await file.text();
       const rawJson = JSON.parse(text);
+      PulseAnalytics.clearFilterCache();
       const diff = await pulseDB.syncBackup(rawJson, file.name);
       await this.loadDatabase();
       this.triggerSyncCelebration(diff);
@@ -2963,24 +4210,22 @@ class BitChordPulseApp {
   }
 
   triggerSyncCelebration(diff) {
-    if (typeof confetti === "function") {
-      confetti({
-        particleCount: 70,
-        spread: 60,
-        origin: { y: 0.6 },
-        colors: ["#FA243C", "#FF5E7E", "#FF8A9E", "#FFFFFF"]
-      });
-    }
+    const totalSecs = Math.floor(diff.deltaMsAdded / 1000);
+    const hrs = Math.floor(totalSecs / 3600);
+    const remMins = Math.floor((totalSecs % 3600) / 60);
+    const mins = Math.floor(totalSecs / 60);
+    const timeFormatted = diff.deltaMsAdded >= 3600000
+      ? `+${hrs}h ${remMins}m (${mins.toLocaleString()}m)`
+      : `+${mins}m`;
 
-    const mins = Math.round(diff.deltaMsAdded / 60000);
-    this.showToast("Sync Complete", `+${mins}m listened, +${diff.deltaPlaysAdded} plays, +${diff.newTracksCount} songs`, "success");
+    this.showToast("Sync Complete", `${timeFormatted}, +${diff.deltaPlaysAdded.toLocaleString()} plays, +${diff.newTracksCount.toLocaleString()} songs`, "success");
 
     const diffModal = document.getElementById("sync-diff-modal");
     if (diffModal) {
       document.getElementById("diff-modal-filename").textContent = diff.fileName;
-      document.getElementById("diff-modal-time").textContent = `+${mins}m`;
-      document.getElementById("diff-modal-plays").textContent = `+${diff.deltaPlaysAdded}`;
-      document.getElementById("diff-modal-newtracks").textContent = `+${diff.newTracksCount}`;
+      document.getElementById("diff-modal-time").textContent = timeFormatted;
+      document.getElementById("diff-modal-plays").textContent = `+${diff.deltaPlaysAdded.toLocaleString()}`;
+      document.getElementById("diff-modal-newtracks").textContent = `+${diff.newTracksCount.toLocaleString()}`;
       document.getElementById("diff-modal-totalhours").textContent = `${diff.totalHours}h`;
       diffModal.classList.remove("hidden");
     }
@@ -3004,13 +4249,34 @@ class BitChordPulseApp {
   renderEmptyState(isEmpty) {
     const dropzone = document.getElementById("initial-empty-dropzone");
     const mainArea = document.getElementById("main-tab-content-area");
+    const masterNav = document.getElementById("universal-master-time-nav");
+    const headerSynced = document.getElementById("header-synced-pill");
+    const sidebarWm = document.getElementById("sidebar-watermark-text");
 
     if (isEmpty) {
       if (dropzone) dropzone.classList.remove("hidden");
       if (mainArea) mainArea.classList.add("hidden");
+      if (masterNav) masterNav.classList.add("hidden");
+      if (headerSynced) headerSynced.textContent = "No Backup Loaded";
+      if (sidebarWm) sidebarWm.textContent = "Database: Empty";
+
+      // Clear any active charts
+      if (this.charts) {
+        Object.keys(this.charts).forEach(key => {
+          if (this.charts[key]) {
+            this.charts[key].destroy();
+            this.charts[key] = null;
+          }
+        });
+      }
+      if (this.constellationAnimId) {
+        cancelAnimationFrame(this.constellationAnimId);
+        this.constellationAnimId = null;
+      }
     } else {
       if (dropzone) dropzone.classList.add("hidden");
       if (mainArea) mainArea.classList.remove("hidden");
+      if (masterNav && this.currentTab !== "time-rhythm") masterNav.classList.remove("hidden");
     }
   }
 
@@ -3077,8 +4343,19 @@ class BitChordPulseApp {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const app = new BitChordPulseApp();
-  window.__pulseApp = app;
-  app.init();
-});
+// Robust bootstrap resilient to document.readyState
+function bootPulseApp() {
+  try {
+    const app = new BitChordPulseApp();
+    window.__pulseApp = app;
+    app.init();
+  } catch (err) {
+    console.error("Critical error during MuStats initialization:", err);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootPulseApp);
+} else {
+  bootPulseApp();
+}

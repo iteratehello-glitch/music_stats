@@ -188,6 +188,8 @@ export class PulseDB {
 
     return {
       watermark: metaMap.lastSyncedWatermark || null,
+      dayLedger: metaMap.dayLedger || {},
+      monthLedger: metaMap.monthLedger || {},
       settings: metaMap.settings || null,
       audiophile: metaMap.audiophile || null,
       syncHistory: syncHistory.sort((a, b) => b.uploadedAt - a.uploadedAt),
@@ -227,6 +229,16 @@ export class PulseDB {
     const existingMeta = await this.get("meta", "lastSyncedWatermark");
     const existingWatermark = existingMeta ? existingMeta.value : null;
 
+    const existingDayLedgerMeta = await this.get("meta", "dayLedger");
+    const existingMonthLedgerMeta = await this.get("meta", "monthLedger");
+    const dayLedger = existingDayLedgerMeta && existingDayLedgerMeta.value ? { ...existingDayLedgerMeta.value } : {};
+    const monthLedger = existingMonthLedgerMeta && existingMonthLedgerMeta.value ? { ...existingMonthLedgerMeta.value } : {};
+
+    // Calculate baseline before sync
+    const prevDayLedger = existingDayLedgerMeta && existingDayLedgerMeta.value ? existingDayLedgerMeta.value : {};
+    const previousAuthoritativeTotalMs = Object.values(prevDayLedger).reduce((sum, d) => sum + (Number(d.ms) || 0), 0);
+    const previousAuthoritativePlays = Object.values(prevDayLedger).reduce((sum, d) => sum + (Number(d.plays) || 0), 0);
+
     const [existingTracksArr, existingMonthlyArr] = await Promise.all([
       this.getAll("tracks"),
       this.getAll("monthly")
@@ -246,7 +258,57 @@ export class PulseDB {
     // Process every monthly bucket
     for (const monthBucket of raw.listening) {
       const month = monthBucket.month; // e.g. "2026-10"
-      if (!month || !Array.isArray(monthBucket.tracks)) continue;
+      if (!month) continue;
+
+      // Extract authoritative day totals from trackDays (exact ms and plays)
+      if (monthBucket.trackDays && typeof monthBucket.trackDays === "object") {
+        for (const [dateStr, td] of Object.entries(monthBucket.trackDays)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          if (!dayLedger[dateStr]) dayLedger[dateStr] = { ms: 0, plays: 0 };
+          dayLedger[dateStr].ms = Math.max(dayLedger[dateStr].ms, Number(td.ms) || 0);
+          dayLedger[dateStr].plays = Math.max(dayLedger[dateStr].plays, Number(td.plays) || 0);
+        }
+      }
+
+      // Extract authoritative day-of-month totals from days (exact ms)
+      if (monthBucket.days && typeof monthBucket.days === "object") {
+        for (const [dayNum, msVal] of Object.entries(monthBucket.days)) {
+          const fullDate = `${month}-${String(dayNum).padStart(2, "0")}`;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(fullDate)) continue;
+          const numMs = Number(msVal) || 0;
+          if (!dayLedger[fullDate]) dayLedger[fullDate] = { ms: 0, plays: 0 };
+          dayLedger[fullDate].ms = Math.max(dayLedger[fullDate].ms, numMs);
+          if (dayLedger[fullDate].plays === 0 && numMs > 0) {
+            dayLedger[fullDate].plays = Math.max(1, Math.round(numMs / 210000));
+          }
+        }
+      }
+
+      // Purge any non-standard date keys
+      for (const k of Object.keys(dayLedger)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) delete dayLedger[k];
+      }
+
+      // Extract official month totals and 24-hr circadian curve
+      let monthDaysSum = 0;
+      if (monthBucket.days) {
+        for (const val of Object.values(monthBucket.days)) {
+          monthDaysSum += Number(val) || 0;
+        }
+      }
+      const hoursArr = Array.isArray(monthBucket.hours) && monthBucket.hours.length === 24
+        ? monthBucket.hours.map(Number)
+        : null;
+
+      if (!monthLedger[month]) {
+        monthLedger[month] = { month, ms: 0, plays: 0, hours: hoursArr };
+      }
+      monthLedger[month].ms = Math.max(monthLedger[month].ms, monthDaysSum);
+      if (hoursArr) {
+        monthLedger[month].hours = hoursArr;
+      }
+
+      if (!Array.isArray(monthBucket.tracks)) continue;
 
       for (const rawTrack of monthBucket.tracks) {
         if (!rawTrack.id) continue;
@@ -424,20 +486,29 @@ export class PulseDB {
     metaStore.put({ key: "lastSyncedWatermark", value: latestWatermark });
     metaStore.put({ key: "settings", value: parsedSettings });
     metaStore.put({ key: "audiophile", value: parsedSettings.audiophile });
+    metaStore.put({ key: "dayLedger", value: dayLedger });
+    metaStore.put({ key: "monthLedger", value: monthLedger });
+
+    // Calculate total hours and plays from master tracks (matching official BitChord app: 5,832 mins / 97.2h)
+    const authoritativeTotalMs = Array.from(tracksMap.values()).reduce((sum, t) => sum + (Number(t.ms) || 0), 0);
+    const authoritativeTotalPlays = Array.from(tracksMap.values()).reduce((sum, t) => sum + (Number(t.plays) || 0), 0);
+
+    const prevTrackTotalMs = existingTracksArr.reduce((sum, t) => sum + (Number(t.ms) || 0), 0);
+    const prevTrackTotalPlays = existingTracksArr.reduce((sum, t) => sum + (Number(t.plays) || 0), 0);
+
+    const effectiveDeltaMs = Math.max(0, authoritativeTotalMs - prevTrackTotalMs);
+    const effectiveDeltaPlays = Math.max(0, authoritativeTotalPlays - prevTrackTotalPlays);
 
     // Sync History log entry
     const syncLogEntry = {
       fileName,
       exportedAt,
       uploadedAt: Date.now(),
-      deltaMsAdded,
-      deltaPlaysAdded,
+      deltaMsAdded: effectiveDeltaMs,
+      deltaPlaysAdded: effectiveDeltaPlays,
       newTracksCount,
       totalTracks: tracksMap.size,
-      totalHours: (
-        Array.from(tracksMap.values()).reduce((sum, t) => sum + (t.ms || 0), 0) /
-        3600000
-      ).toFixed(2)
+      totalHours: (authoritativeTotalMs / 3600000).toFixed(2)
     };
     syncStore.add(syncLogEntry);
 
@@ -450,8 +521,8 @@ export class PulseDB {
       isNewWatermark: !existingWatermark || exportedAt > existingWatermark,
       oldWatermark: existingWatermark,
       newWatermark: latestWatermark,
-      deltaMsAdded,
-      deltaPlaysAdded,
+      deltaMsAdded: effectiveDeltaMs,
+      deltaPlaysAdded: effectiveDeltaPlays,
       newTracksCount,
       totalTracks: tracksMap.size,
       totalHours: syncLogEntry.totalHours,

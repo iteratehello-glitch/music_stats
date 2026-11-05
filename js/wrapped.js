@@ -76,7 +76,7 @@ export class BitChordWrapped {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 20px; z-index:10;">
           <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#fff;">
             <span style="color:#FA243C;">⚡</span>
-            <span>BitChord Pulse • Replay '26</span>
+            <span>MuStats • Replay '26</span>
           </div>
           <button id="wrapped-close-btn" style="background:transparent; border:none; color:#fff; font-size:18px; cursor:pointer;">✕</button>
         </div>
@@ -160,7 +160,7 @@ export class BitChordWrapped {
           <div class="story-slide" id="story-slide-5" style="position:absolute; inset:0; padding:24px 20px; display:flex; flex-direction:column; justify-content:space-between; align-items:center;">
             <div id="wrapped-share-card" style="width:100%; background:linear-gradient(160deg, #18121E 0%, #09090B 100%); border:1px solid rgba(250,36,60,0.3); border-radius:20px; padding:22px 18px; box-shadow:0 16px 40px rgba(0,0,0,0.8);">
               <div style="display:flex; justify-content:space-between; font-size:10px; font-weight:800; letter-spacing:0.1em; color:#FA243C; margin-bottom:16px;">
-                <span>BITCHORD PULSE</span>
+                <span>MUSTATS</span>
                 <span>REPLAY '26</span>
               </div>
               <div style="text-align:center; margin-bottom:18px;">

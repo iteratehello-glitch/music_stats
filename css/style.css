@@ -56,6 +56,14 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 
 *, *::before, *::after {
   box-sizing: border-box;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Global Grid & Flex Blowout Prevention */
@@ -507,6 +515,33 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   background: var(--accent-crimson-hover);
 }
 
+.btn-header-install {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.btn-header-install:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-header-install.hidden {
+  display: none !important;
+}
+
 /* Tab Viewport Container */
 .tab-viewport-container {
   max-width: 1320px;
@@ -951,7 +986,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 .github-heatmap-wrapper {
   overflow-x: auto;
   padding-bottom: 12px;
-  scrollbar-width: thin;
+  scrollbar-width: none !important;
   position: relative;
 }
 
@@ -1338,12 +1373,122 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 .artist-constellation-wrap {
   position: relative;
   width: 100%;
-  height: 380px;
+  height: 520px;
   border-radius: 20px;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 50%, rgba(250, 36, 60, 0.05) 0%, rgba(9, 9, 11, 0.85) 80%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.7);
+  background: radial-gradient(circle at 50% 50%, rgba(250, 36, 60, 0.09) 0%, rgba(9, 9, 11, 0.94) 80%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.85);
+}
+
+@media (min-width: 1024px) {
+  .artist-constellation-wrap {
+    height: 560px;
+  }
+}
+
+/* Constellation Legend Header */
+.constellation-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.constellation-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.constellation-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  letter-spacing: -0.01em;
+}
+
+.constellation-legend-line {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.constellation-legend-line.solid-crimson {
+  background: #FA243C;
+  box-shadow: 0 0 8px rgba(250, 36, 60, 0.9);
+}
+
+.constellation-legend-line.dashed-filament {
+  background: repeating-linear-gradient(90deg, rgba(255, 94, 126, 0.95) 0, rgba(255, 94, 126, 0.95) 4px, transparent 4px, transparent 7px);
+}
+
+.constellation-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FA243C, #FF5E7E);
+  box-shadow: 0 0 6px rgba(250, 36, 60, 0.7);
+}
+
+/* Constellation Interactive Hover Banner */
+.constellation-hover-banner {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 8px 18px;
+  background: rgba(14, 14, 18, 0.92);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid rgba(250, 36, 60, 0.35);
+  border-radius: 26px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 20px rgba(250, 36, 60, 0.22);
+  pointer-events: none;
+  z-index: 10;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.constellation-hover-banner.active {
+  border-color: rgba(250, 36, 60, 0.85);
+  background: rgba(18, 14, 18, 0.96);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 28px rgba(250, 36, 60, 0.45);
+}
+
+.constellation-banner-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px #FA243C);
+}
+
+.constellation-banner-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.constellation-banner-text strong {
+  color: #FF5E7E;
+  font-weight: 700;
 }
 
 /* FIX 1: Strict sizing on All Artists and Albums grids */
@@ -1618,16 +1763,29 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 }
 
 .track-col-plays-time {
-  width: 130px;
+  min-width: 140px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  justify-content: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .track-plays-text {
-  font-size: 12.5px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.track-sub-stat {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 .track-share-bar-bg {
@@ -1682,7 +1840,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   gap: 14px;
   overflow-x: auto;
   padding: 6px 0;
-  scrollbar-width: thin;
+  scrollbar-width: none !important;
 }
 
 .search-chip-card {
@@ -2084,11 +2242,55 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 }
 
 /* ==========================================================================
-   3-Mode Master Switcher (All-Time | Monthly | Daily)
+   4-Mode Universal Master Switcher (All-Time | Monthly | Weekly | Daily)
    ========================================================================== */
 .master-mode-nav-bar {
   padding: 12px 20px;
   margin-bottom: 6px;
+}
+
+.universal-master-time-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: var(--radius-card);
+  background: rgba(20, 20, 26, 0.65);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  margin-bottom: 8px;
+}
+
+.universal-master-time-nav.hidden {
+  display: none !important;
+}
+
+.universal-subnav-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.subnav-time-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.subnav-time-bar.hidden {
+  display: none !important;
 }
 
 .master-mode-flex-row {
@@ -2160,41 +2362,45 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   padding: 20px;
 }
 
-/* Day Picker Bar & Daily Components */
+/* Day Picker Bar & Daily 5-Pack Rolling Carousel */
 .day-navigator-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 18px;
-  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  box-sizing: border-box;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
-.day-stepper-left {
-  display: flex;
-  align-items: center;
+.daily-5pack-strip,
+.weekly-5pack-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-.daily-active-pills-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  padding: 4px 2px;
-  flex: 1;
-  min-width: 0;
+.daily-5pack-strip::-webkit-scrollbar,
+.weekly-5pack-strip::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-.daily-active-pill {
-  flex-shrink: 0;
+.daily-active-pill,
+.weekly-active-pill {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
@@ -2202,44 +2408,146 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.daily-active-pill:hover {
+.daily-active-pill:hover,
+.weekly-active-pill:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
-.daily-active-pill.active {
-  background: var(--accent-crimson);
+.daily-active-pill.active,
+.weekly-active-pill.active {
+  background: linear-gradient(135deg, #FA243C, #FF5E7E);
   color: #fff;
-  border-color: var(--accent-crimson);
+  border-color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(250, 36, 60, 0.35);
+  box-shadow: 0 4px 16px rgba(250, 36, 60, 0.4);
+}
+
+.daily-pill-date {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .daily-pill-badge {
   font-family: var(--font-mono);
   font-size: 10px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.35);
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
-.date-input-glass {
-  background: rgba(255, 255, 255, 0.05);
+.daily-page-indicator {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* Yearly Subnav & Pills */
+.yearly-pills-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.yearly-pills-strip::-webkit-scrollbar {
+  display: none !important;
+}
+
+.yearly-pill-btn {
+  padding: 8px 22px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
-  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+.yearly-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+}
+.yearly-pill-btn.active {
+  background: linear-gradient(135deg, #FA243C, #FF5E7E);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 16px rgba(250, 36, 60, 0.4);
+}
+
+/* Rhythm Heatmap Year Selector */
+.heatmap-year-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.heatmap-year-pill {
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.heatmap-year-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.heatmap-year-pill.active {
+  background: linear-gradient(135deg, #FA243C, #FF5E7E);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 10px rgba(250, 36, 60, 0.35);
+}
+
+/* Library Scope Indicator */
+.library-scope-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-family);
   font-size: 12px;
-  padding: 6px 12px;
-  color-scheme: dark;
-  outline: none;
+  font-weight: 600;
+  color: #FA243C;
+  background: rgba(250, 36, 60, 0.1);
+  border: 1px solid rgba(250, 36, 60, 0.25);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
 }
 
-.day-kpi-strip {
+.day-kpi-strip,
+.week-kpi-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
@@ -2313,6 +2621,13 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   gap: 20px;
 }
 
+@media (max-width: 860px) {
+  .loyalty-binge-grid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+
 .loyalty-subheading {
   font-size: 13.5px;
   font-weight: 700;
@@ -2339,6 +2654,9 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   border-radius: var(--radius-inner);
   cursor: pointer;
   transition: background 0.15s ease;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .loyalty-item:hover {
@@ -2346,16 +2664,20 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 }
 
 .loyalty-art {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .loyalty-info {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .loyalty-title {
@@ -2365,6 +2687,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.35;
 }
 
 .loyalty-artist {
@@ -2373,6 +2696,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.35;
 }
 
 .loyalty-pill {
@@ -2382,6 +2706,8 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   padding: 4px 8px;
   border-radius: var(--radius-pill);
   white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .loyalty-pill-ritual {
@@ -2399,6 +2725,22 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 .library-control-center {
   padding: 20px;
   margin-bottom: 4px;
+  position: relative;
+  z-index: 80; /* Ensures control center and dropdown sit above all song/album tables */
+}
+
+.library-control-center.dropdown-open,
+.library-control-center:has(.glass-select-menu:not(.hidden)) {
+  z-index: 5000;
+}
+
+#view-library-songs,
+#view-library-albums,
+#view-library-consistent,
+#view-library-obsessions,
+#view-library-skipped {
+  position: relative;
+  z-index: 10;
 }
 
 .library-toolbar-row {
@@ -2446,15 +2788,153 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   color: #fff;
 }
 
-.library-sort-wrap {
+/* Custom Apple Music Liquid Glass Select Component */
+.custom-dropdown-wrap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
+  z-index: 100;
+}
+
+.custom-dropdown-wrap.open,
+.custom-dropdown-wrap:has(.glass-select-menu:not(.hidden)) {
+  z-index: 6000;
 }
 
 .sort-label {
   font-size: 12px;
   color: var(--text-tertiary);
+  user-select: none;
+}
+
+.glass-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  color: #FFFFFF;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-family);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 220px;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.glass-select-trigger:hover,
+.glass-select-trigger.open {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(250, 36, 60, 0.45);
+  box-shadow: 0 6px 20px rgba(250, 36, 60, 0.18);
+  transform: translateY(-1px);
+}
+
+.glass-select-trigger:focus-visible {
+  outline: 2px solid #FA243C;
+  outline-offset: 2px;
+}
+
+.glass-select-arrow {
+  color: var(--text-secondary);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.glass-select-trigger.open .glass-select-arrow {
+  transform: rotate(180deg);
+  color: #FA243C;
+}
+
+.glass-select-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 260px;
+  background: rgba(16, 16, 22, 0.98);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 18px;
+  padding: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(250, 36, 60, 0.2);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+  pointer-events: auto;
+}
+
+.glass-select-menu.hidden {
+  display: none !important;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.glass-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  pointer-events: auto;
+  position: relative;
+  z-index: 100000;
+}
+
+.glass-select-option * {
+  pointer-events: none; /* Make clicks directly register on the option container */
+}
+
+.glass-select-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+}
+
+.glass-select-option.active {
+  background: rgba(250, 36, 60, 0.16);
+  color: #FA243C;
+  font-weight: 600;
+}
+
+.select-check {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FA243C;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.glass-select-option.active .select-check {
+  opacity: 1;
 }
 
 .sort-select-glass {
@@ -2643,6 +3123,14 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   margin: 60px auto;
   text-align: center;
   padding: 48px 32px;
+  cursor: pointer;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.empty-state-card.drag-hover {
+  border-color: rgba(250, 36, 60, 0.6) !important;
+  box-shadow: 0 0 35px rgba(250, 36, 60, 0.35) !important;
+  transform: scale(1.01);
 }
 
 .hidden {
@@ -2786,13 +3274,41 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   }
 
   .day-navigator-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
   }
 
-  .day-stepper-left {
-    justify-content: space-between;
+  .day-kpi-strip,
+  .week-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .daily-5pack-strip,
+  .weekly-5pack-strip {
+    gap: 4px;
+  }
+
+  .daily-active-pill,
+  .weekly-active-pill {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 2px;
+  }
+
+  .daily-pill-date {
+    font-size: 10px;
+  }
+
+  .daily-pill-badge {
+    font-size: 8.5px;
+    padding: 1px 4px;
+  }
+
+  .daily-page-indicator {
+    display: none;
   }
 
   .song-deepdive-header {
