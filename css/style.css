@@ -1130,6 +1130,21 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   margin-bottom: 4px;
 }
 
+/* Month Calendar Cover View Subnav */
+.cal-subview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cal-subview-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
 .cal-month-days-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1139,25 +1154,30 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 .month-cover-cell {
   position: relative;
   aspect-ratio: 1 / 1;
-  border-radius: 12px;
+  min-height: 48px;
+  border-radius: 10px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
   cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .month-cover-cell:hover {
-  transform: translateY(-2px);
+  transform: translateY(-2px) scale(1.02);
   border-color: #FA243C;
+  box-shadow: 0 6px 18px rgba(250, 36, 60, 0.35);
+  z-index: 3;
 }
 
 .month-cover-cell.selected {
   outline: 2px solid #FFFFFF;
   border-color: #FA243C;
+  box-shadow: 0 0 16px rgba(250, 36, 60, 0.6);
+  z-index: 4;
 }
 
 .month-cover-cell.empty-day {
@@ -1166,46 +1186,209 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   cursor: default;
 }
 
+.month-cover-cell.empty-day:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .month-cell-bg-art {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.75;
-  transition: opacity 0.2s ease;
+  opacity: 0.92;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .month-cover-cell:hover .month-cell-bg-art {
-  opacity: 0.95;
+  opacity: 1;
+  transform: scale(1.04);
 }
 
 .month-cell-day-num {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 11px;
+  top: 4px;
+  left: 4px;
+  font-size: 9.5px;
   font-weight: 700;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
-  padding: 2px 6px;
-  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 1px 5px;
+  border-radius: 4px;
   z-index: 2;
+  line-height: 1.2;
 }
 
 .month-cell-min-badge {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
+  bottom: 4px;
+  right: 4px;
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 8.5px;
+  font-weight: 700;
   color: #fff;
-  background: rgba(250, 36, 60, 0.85);
-  padding: 2px 6px;
-  border-radius: 6px;
+  background: rgba(250, 36, 60, 0.92);
+  padding: 1px 5px;
+  border-radius: 4px;
   z-index: 2;
+  line-height: 1.2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Daily Anthem Gallery (Big Image Cards) */
+.cal-month-anthem-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.anthem-day-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  min-width: 0;
+}
+
+.anthem-day-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(250, 36, 60, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.anthem-day-card.selected {
+  background: rgba(250, 36, 60, 0.12);
+  border-color: #FA243C;
+  box-shadow: 0 0 16px rgba(250, 36, 60, 0.25);
+}
+
+.anthem-day-art {
+  width: 68px;
+  height: 68px;
+  border-radius: 12px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+.anthem-day-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.anthem-day-date-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-rose);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.anthem-day-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anthem-day-artist {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anthem-day-stats {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Day Anthem Spotlight Hero Card */
+.inspector-spotlight-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, rgba(250, 36, 60, 0.12) 0%, rgba(22, 22, 29, 0.8) 100%);
+  border: 1px solid rgba(250, 36, 60, 0.35);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 0;
+}
+
+.inspector-spotlight-card:hover {
+  border-color: #FA243C;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(250, 36, 60, 0.2);
+}
+
+.inspector-spotlight-art {
+  width: 80px;
+  height: 80px;
+  border-radius: 14px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), 0 0 12px rgba(250, 36, 60, 0.3);
+}
+
+.inspector-spotlight-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.inspector-spotlight-tag {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #FF5E7E;
+  margin-bottom: 2px;
+  display: block;
+}
+
+.inspector-spotlight-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.inspector-spotlight-artist {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.inspector-spotlight-stats {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* Day Inspector Card (Clean & Responsive) */
@@ -1489,6 +1672,241 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 .constellation-banner-text strong {
   color: #FF5E7E;
   font-weight: 700;
+}
+
+/* Constellation Header Controls */
+.constellation-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Mobile-Friendly Collaborations & Sonic Galaxy View */
+.constellation-collabs-view {
+  padding: 16px 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.collabs-view-section-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collabs-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .collabs-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.collab-pair-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.22s ease;
+  min-width: 0;
+}
+
+.collab-pair-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(250, 36, 60, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+}
+
+.collab-pair-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collab-artist-unit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+  flex: 1;
+}
+
+.collab-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.collab-avatar-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(250, 36, 60, 0.7);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.collab-avatar-rank {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  background: #FA243C;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 8px;
+  line-height: 1.2;
+}
+
+.collab-artist-meta {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.collab-artist-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-artist-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.collab-connector-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, rgba(250, 36, 60, 0.2) 0%, rgba(255, 94, 126, 0.15) 100%);
+  border: 1px solid rgba(250, 36, 60, 0.5);
+  border-radius: 20px;
+  color: #FF5E7E;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(250, 36, 60, 0.25);
+}
+
+.collab-tracks-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.collab-track-chip {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sonic Galaxies Grid in Collabs View */
+.galaxy-clusters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+
+.galaxy-cluster-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.galaxy-cluster-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.galaxy-cluster-title {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.galaxy-cluster-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.galaxy-artists-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.galaxy-artist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.galaxy-artist-chip:hover {
+  background: rgba(250, 36, 60, 0.15);
+  border-color: #FA243C;
+  transform: translateY(-1px);
+}
+
+.galaxy-chip-rank {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--accent-rose);
+}
+
+.galaxy-chip-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.galaxy-chip-hrs {
+  font-size: 10px;
+  color: var(--text-tertiary);
 }
 
 /* FIX 1: Strict sizing on All Artists and Albums grids */
@@ -2731,7 +3149,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 
 .library-control-center.dropdown-open,
 .library-control-center:has(.glass-select-menu:not(.hidden)) {
-  z-index: 5000;
+  z-index: 99999;
 }
 
 #view-library-songs,
@@ -2799,7 +3217,7 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 
 .custom-dropdown-wrap.open,
 .custom-dropdown-wrap:has(.glass-select-menu:not(.hidden)) {
-  z-index: 6000;
+  z-index: 999999;
 }
 
 .sort-label {
@@ -2860,15 +3278,13 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
   top: calc(100% + 8px);
   right: 0;
   min-width: 260px;
-  background: rgba(16, 16, 22, 0.98);
-  backdrop-filter: blur(40px) saturate(200%);
-  -webkit-backdrop-filter: blur(40px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-top: 1px solid rgba(255, 255, 255, 0.32);
+  background: #141419;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 18px;
   padding: 6px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(250, 36, 60, 0.2);
-  z-index: 99999;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.95), 0 0 25px rgba(250, 36, 60, 0.25);
+  z-index: 999999;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -3167,8 +3583,35 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 
   /* Reduce Container Padding on Mobile */
   .tab-viewport-container {
-    padding: 16px 16px 96px 16px;
+    padding: 16px 14px 96px 14px;
     gap: 18px;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .glass-container {
+    padding: 16px 14px;
+    border-radius: 16px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .section-card-header {
+    min-width: 0;
+    max-width: 100%;
+    gap: 8px;
+  }
+
+  .section-card-header > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .section-card-title, .section-card-sub {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .persistent-header {
@@ -3288,23 +3731,41 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 
   .daily-5pack-strip,
   .weekly-5pack-strip {
-    gap: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none !important;
+    padding: 4px 2px;
+    flex: 1;
+    min-width: 0;
   }
 
   .daily-active-pill,
   .weekly-active-pill {
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 2px;
+    flex: 0 0 auto;
+    min-width: 92px;
+    height: 38px;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
   }
 
   .daily-pill-date {
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .daily-pill-badge {
-    font-size: 8.5px;
-    padding: 1px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
   }
 
   .daily-page-indicator {
@@ -3354,6 +3815,256 @@ html, body, #app-shell-root, main, .main-viewport, .tab-viewport-container {
 }
 
 @media (max-width: 640px) {
+  /* Master Mode Switcher */
+  .header-master-mode-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .universal-master-time-nav {
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .master-mode-flex-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .master-mode-segmented-pill {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    padding: 3px;
+    gap: 2px;
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+
+  .master-pill-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .master-mode-meta-badge {
+    font-size: 11px;
+    padding: 4px 8px;
+    text-align: center;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  /* Single-Day Obsessions & Loyalty Rows */
+  .loyalty-col {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .loyalty-list {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .loyalty-item {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    padding: 8px 10px;
+    gap: 10px;
+    box-sizing: border-box;
+  }
+
+  .loyalty-art {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 8px;
+  }
+
+  .loyalty-info {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  .loyalty-title, .loyalty-artist {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .loyalty-pill {
+    flex-shrink: 0;
+    font-size: 10px;
+    padding: 3px 7px;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+    padding: 3px 6px;
+    max-width: 95px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Time & Rhythm Month Summary Strip & Navigator (Image 3 fix) */
+  .month-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+  }
+
+  .month-stat-box {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .month-stat-val {
+    font-size: 13.5px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    line-height: 1.25 !important;
+  }
+
+  .view-mode-pill-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .view-toggle-btn {
+    padding: 5px 9px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .header-content-wrap {
+    gap: 10px;
+  }
+
+  .header-title-heading {
+    font-size: 20px;
+  }
+
+  .btn-header-install, .btn-header-update {
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
+
+  /* Month Calendar on Mobile (Image 4 fix) */
+  .cal-month-days-grid {
+    gap: 5px;
+  }
+
+  .month-cover-cell {
+    min-height: 38px;
+    border-radius: 8px;
+  }
+
+  .month-cell-day-num {
+    top: 2px;
+    left: 2px;
+    font-size: 8.5px;
+    padding: 1px 3px;
+    border-radius: 3px;
+  }
+
+  .month-cell-min-badge {
+    bottom: 2px;
+    right: 2px;
+    font-size: 7.5px;
+    padding: 1px 3px;
+    border-radius: 3px;
+  }
+
+  .cal-weekday-header-row span {
+    font-size: 9px;
+  }
+
+  .cal-month-anthem-gallery {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .anthem-day-art {
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
+  }
+
+  .anthem-day-card {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .anthem-day-title {
+    font-size: 12.5px;
+  }
+
+  .inspector-spotlight-card {
+    padding: 10px 12px;
+    gap: 12px;
+  }
+
+  .inspector-spotlight-art {
+    width: 62px;
+    height: 62px;
+    border-radius: 12px;
+  }
+
+  .inspector-spotlight-title {
+    font-size: 13.5px;
+  }
+
+  /* Constellation on Mobile (Image 5 fix) */
+  .artist-constellation-wrap {
+    height: 420px;
+    border-radius: 16px;
+  }
+
+  .constellation-header-flex {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .constellation-header-controls {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .constellation-legend {
+    display: none !important;
+  }
+
+  .constellation-hover-banner {
+    bottom: 10px;
+    padding: 6px 12px;
+    max-width: calc(100% - 20px);
+  }
+
+  .constellation-banner-text {
+    font-size: 11px;
+  }
+
   /* Hide Album and Consistency Dots on tracklist table for mobile */
   .track-col-album, .track-col-dots {
     display: none !important;

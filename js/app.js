@@ -187,11 +187,19 @@ class BitChordPulseApp {
     const toStr = dt => dt.toISOString().split("T")[0];
     const start = toStr(monday);
     const end = toStr(sunday);
+    const startParts = start.split("-");
+    const endParts = end.split("-");
+    const sameMonth = startParts[0] === endParts[0] && startParts[1] === endParts[1];
+    const startShort = this.formatDateShort(start);
+    const endShort = this.formatDateShort(end);
+    const label = sameMonth
+      ? `${startShort}–${parseInt(endParts[2], 10)}`
+      : `${startShort} – ${endShort}`;
     return {
       start,
       end,
       key: `week:${start}:${end}`,
-      label: `${this.formatDateShort(start)} – ${this.formatDateShort(end)}`
+      label
     };
   }
 
@@ -199,7 +207,15 @@ class BitChordPulseApp {
     if (!weekKey) return "";
     const cleanKey = weekKey.startsWith("week:") ? weekKey.replace("week:", "") : weekKey;
     const [start, end] = cleanKey.split(":");
-    return `${this.formatDateShort(start)} – ${this.formatDateShort(end)}`;
+    if (!start || !end) return weekKey;
+    const startParts = start.split("-");
+    const endParts = end.split("-");
+    const sameMonth = startParts[0] === endParts[0] && startParts[1] === endParts[1];
+    const startShort = this.formatDateShort(start);
+    const endShort = this.formatDateShort(end);
+    return sameMonth
+      ? `${startShort}–${parseInt(endParts[2], 10)}`
+      : `${startShort} – ${endShort}`;
   }
 
   /**
@@ -292,35 +308,43 @@ class BitChordPulseApp {
       }
     } else if (mode === "yearly") {
       this.currentTimeframe = this.selectedYear || "all";
-      this.renderYearlyStrip();
       if (badge) {
         badge.textContent = `Yearly Observatory • ${this.selectedYear || "2026"}`;
       }
     } else if (mode === "monthly") {
       this.currentTimeframe = this.selectedMonth || "all";
-      this.renderMonthlyStrip();
       if (badge) {
         badge.textContent = `Monthly Focus • ${this.formatMonthName(this.selectedMonth)}`;
       }
     } else if (mode === "weekly") {
       this.currentTimeframe = this.selectedWeekKey || "all";
-      this.renderWeeklyStrip();
       if (badge && this.selectedWeekKey) {
         badge.textContent = `Weekly Focus • ${this.formatWeekLabel(this.selectedWeekKey)}`;
       }
     } else if (mode === "daily") {
       this.currentTimeframe = this.selectedDayDate || "all";
-      this.renderDailyStrip();
       if (badge && this.selectedDayDate) {
         badge.textContent = `Daily Breakdown • ${this.formatDateLong(this.selectedDayDate)}`;
       }
     }
 
-    // 4. Update the active view on Listen Now
-    this.updateListenNowSubviews(mode);
+    // 4. Update the active global subnav strip so pills are ALWAYS visually synchronized across all tabs
+    this.updateGlobalSubnavStrips();
 
-    // 5. Refresh current active tab
+    // 5. Single-pass refresh of active tab (prevents triple-rendering and lag)
     this.refreshActiveTab();
+  }
+
+  updateGlobalSubnavStrips() {
+    if (this.masterTimeMode === "yearly") {
+      this.renderYearlyStrip();
+    } else if (this.masterTimeMode === "monthly") {
+      this.renderMonthlyStrip();
+    } else if (this.masterTimeMode === "weekly") {
+      this.renderWeeklyStrip();
+    } else if (this.masterTimeMode === "daily") {
+      this.renderDailyStrip();
+    }
   }
 
   updateListenNowSubviews(mode) {
@@ -817,7 +841,7 @@ class BitChordPulseApp {
     const pEl = document.getElementById("ln-ms-summary-plays");
 
     if (hEl) hEl.textContent = `${monthKpis.totalHoursFormatted} hrs`;
-    if (sEl) sEl.textContent = `${monthKpis.hours}h tracked`;
+    if (sEl) sEl.textContent = `${monthKpis.activeDaysCount} of ${monthKpis.daysInRange} days`;
     if (aEl) aEl.textContent = `${monthKpis.dailyAverageHours}h / day`;
     if (pEl) pEl.textContent = `${monthKpis.totalPlays} plays`;
 
@@ -1136,7 +1160,8 @@ class BitChordPulseApp {
 
     const indicator = document.getElementById("global-week-page-indicator");
     if (indicator) {
-      indicator.textContent = `${this.weeklyWindowStart + 1}–${this.weeklyWindowStart + visibleWeeks.length} of ${totalWeeks}`;
+      const currentNum = selIdx >= 0 ? selIdx + 1 : 1;
+      indicator.textContent = `${currentNum} of ${totalWeeks}`;
     }
 
     const prevBtns = [
@@ -1147,41 +1172,49 @@ class BitChordPulseApp {
       document.getElementById("btn-global-week-next")
     ].filter(Boolean);
 
-    const canPrev = this.weeklyWindowStart > 0;
-    const canNext = this.weeklyWindowStart < totalWeeks - windowSize;
+    const canPrev = selIdx > 0;
+    const canNext = selIdx !== -1 && selIdx < totalWeeks - 1;
 
     prevBtns.forEach(btn => {
       btn.disabled = !canPrev;
       btn.style.opacity = canPrev ? "1" : "0.3";
       btn.style.cursor = canPrev ? "pointer" : "not-allowed";
-      btn.onclick = () => this.rollWeeklyWindow(-1);
+      btn.onclick = () => this.stepWeek(-1);
     });
 
     nextBtns.forEach(btn => {
       btn.disabled = !canNext;
       btn.style.opacity = canNext ? "1" : "0.3";
       btn.style.cursor = canNext ? "pointer" : "not-allowed";
-      btn.onclick = () => this.rollWeeklyWindow(1);
+      btn.onclick = () => this.stepWeek(1);
     });
   }
 
-  rollWeeklyWindow(step) {
+  stepWeek(direction) {
     if (!this.availableWeeks || this.availableWeeks.length === 0) return;
-    const totalWeeks = this.availableWeeks.length;
-    const windowSize = Math.min(5, totalWeeks);
-
-    this.weeklyWindowStart = Math.max(0, Math.min(totalWeeks - windowSize, this.weeklyWindowStart + step));
-    const visibleWeeks = this.availableWeeks.slice(this.weeklyWindowStart, this.weeklyWindowStart + windowSize);
-
-    if (!visibleWeeks.some(w => w.key === this.selectedWeekKey)) {
-      this.selectedWeekKey = step > 0 ? visibleWeeks[0].key : visibleWeeks[visibleWeeks.length - 1].key;
+    const selIdx = this.availableWeeks.findIndex(w => w.key === this.selectedWeekKey);
+    const targetIdx = Math.max(0, Math.min(this.availableWeeks.length - 1, (selIdx === -1 ? 0 : selIdx) + direction));
+    if (targetIdx !== selIdx && targetIdx >= 0) {
+      this.selectWeek(this.availableWeeks[targetIdx].key);
     }
+  }
 
-    this.setMasterTimeMode("weekly");
+  rollWeeklyWindow(step) {
+    this.stepWeek(step > 0 ? 1 : -1);
   }
 
   selectWeek(weekKey) {
     this.selectedWeekKey = weekKey;
+    const selIdx = this.availableWeeks ? this.availableWeeks.findIndex(w => w.key === weekKey) : -1;
+    if (selIdx !== -1) {
+      const windowSize = Math.min(5, this.availableWeeks.length);
+      const maxStart = Math.max(0, this.availableWeeks.length - windowSize);
+      if (selIdx < this.weeklyWindowStart) {
+        this.weeklyWindowStart = selIdx;
+      } else if (selIdx >= this.weeklyWindowStart + windowSize) {
+        this.weeklyWindowStart = Math.min(maxStart, selIdx - windowSize + 1);
+      }
+    }
     this.setMasterTimeMode("weekly");
   }
 
@@ -1375,17 +1408,28 @@ class BitChordPulseApp {
 
   selectDate(dateStr) {
     this.selectedDayDate = dateStr;
+    const selIdx = this.availableDays ? this.availableDays.indexOf(dateStr) : -1;
+    if (selIdx !== -1) {
+      const maxStart = Math.max(0, this.availableDays.length - 5);
+      if (selIdx < this.dailyWindowStart) {
+        this.dailyWindowStart = selIdx;
+      } else if (selIdx >= this.dailyWindowStart + 5) {
+        this.dailyWindowStart = Math.min(maxStart, selIdx - 4);
+      }
+    }
     this.setMasterTimeMode("daily");
   }
 
-  renderDailyStrip() {
-    this.renderListenNowDaily();
+  stepDay(direction) {
+    if (!this.availableDays || this.availableDays.length === 0) return;
+    const selIdx = this.availableDays.indexOf(this.selectedDayDate);
+    const targetIdx = Math.max(0, Math.min(this.availableDays.length - 1, (selIdx === -1 ? 0 : selIdx) + direction));
+    if (targetIdx !== selIdx && targetIdx >= 0) {
+      this.selectDate(this.availableDays[targetIdx]);
+    }
   }
 
-  /**
-   * Mode D: Daily Deep-Dive View (5-Date Rolling Horizon)
-   */
-  renderListenNowDaily() {
+  renderDailyStrip() {
     const strips = [
       document.getElementById("global-daily-pills-strip"),
       document.getElementById("ln-daily-pills-strip")
@@ -1409,14 +1453,6 @@ class BitChordPulseApp {
 
     if (!this.availableDays || this.availableDays.length === 0) {
       if (badge) badge.textContent = "Daily Breakdown • No Data Available";
-      const tracklistRows = document.getElementById("ln-day-tracklist-rows");
-      if (tracklistRows) {
-        tracklistRows.innerHTML = `
-          <div style="padding: 32px 16px; text-align: center; color: var(--text-secondary); font-size: 14px;">
-            No daily listening logs found. Upload a raw BitChord backup to explore daily stats.
-          </div>
-        `;
-      }
       return;
     }
 
@@ -1433,9 +1469,11 @@ class BitChordPulseApp {
     // Keep window aligned so that selectedDayDate is always visible inside the 5 dates
     if (this.dailyWindowStart === undefined) {
       this.dailyWindowStart = maxStart;
-    } else {
-      if (selIdx !== -1 && (selIdx < this.dailyWindowStart || selIdx >= this.dailyWindowStart + 5)) {
-        this.dailyWindowStart = Math.min(maxStart, Math.max(0, Math.floor(selIdx / 5) * 5));
+    } else if (selIdx !== -1) {
+      if (selIdx < this.dailyWindowStart) {
+        this.dailyWindowStart = selIdx;
+      } else if (selIdx >= this.dailyWindowStart + 5) {
+        this.dailyWindowStart = selIdx - 4;
       }
     }
     this.dailyWindowStart = Math.min(maxStart, Math.max(0, this.dailyWindowStart));
@@ -1451,14 +1489,14 @@ class BitChordPulseApp {
       strip.innerHTML = visibleDays.map(dateStr => {
         const isActive = this.selectedDayDate === dateStr ? "active" : "";
         let dayMs = 0;
-        if (this.masterState.dayLedger && this.masterState.dayLedger[dateStr]) {
+        if (this.masterState && this.masterState.dayLedger && this.masterState.dayLedger[dateStr]) {
           dayMs = this.masterState.dayLedger[dateStr].ms || 0;
-        } else if (this.masterState.tracks) {
+        } else if (this.masterState && this.masterState.tracks) {
           for (const t of this.masterState.tracks) {
             if (t.days && t.days[dateStr]) dayMs += t.days[dateStr].ms || 0;
           }
         }
-        if (dayMs === 0 && this.masterState.monthly) {
+        if (dayMs === 0 && this.masterState && this.masterState.monthly) {
           const mPrefix = dateStr.slice(0, 7);
           for (const m of this.masterState.monthly) {
             if (m.month === mPrefix && m.days && m.days[dateStr]) {
@@ -1520,28 +1558,46 @@ class BitChordPulseApp {
       }
     });
 
-    const canPrev = this.dailyWindowStart > 0;
-    const canNext = this.dailyWindowStart < maxStart;
+    const canPrev = selIdx > 0;
+    const canNext = selIdx !== -1 && selIdx < totalDays - 1;
 
     prevDayBtns.forEach(btn => {
       btn.disabled = !canPrev;
       btn.style.opacity = canPrev ? "1" : "0.3";
       btn.style.cursor = canPrev ? "pointer" : "not-allowed";
-      btn.onclick = () => this.rollDailyWindow(-5);
+      btn.onclick = () => this.stepDay(-1);
     });
 
     nextDayBtns.forEach(btn => {
       btn.disabled = !canNext;
       btn.style.opacity = canNext ? "1" : "0.3";
       btn.style.cursor = canNext ? "pointer" : "not-allowed";
-      btn.onclick = () => this.rollDailyWindow(5);
+      btn.onclick = () => this.stepDay(1);
     });
 
     pageIndicators.forEach(pi => {
-      const startNum = this.dailyWindowStart + 1;
-      const endNum = Math.min(totalDays, this.dailyWindowStart + 5);
-      pi.textContent = `${startNum}–${endNum} of ${totalDays}`;
+      const currentNum = selIdx >= 0 ? selIdx + 1 : 1;
+      pi.textContent = `${currentNum} of ${totalDays}`;
     });
+  }
+
+  /**
+   * Mode D: Daily Deep-Dive View (Listen Now Tab Content)
+   */
+  renderListenNowDaily() {
+    this.renderDailyStrip();
+
+    if (!this.availableDays || this.availableDays.length === 0) {
+      const tracklistRows = document.getElementById("ln-day-tracklist-rows");
+      if (tracklistRows) {
+        tracklistRows.innerHTML = `
+          <div style="padding: 32px 16px; text-align: center; color: var(--text-secondary); font-size: 14px;">
+            No daily listening logs found. Upload a raw BitChord backup to explore daily stats.
+          </div>
+        `;
+      }
+      return;
+    }
 
     // Compute Day Breakdown
     const dayData = PulseAnalytics.computeDayBreakdown(this.masterState, this.selectedDayDate);
@@ -1687,17 +1743,7 @@ class BitChordPulseApp {
   }
 
   rollDailyWindow(step) {
-    if (!this.availableDays || this.availableDays.length <= 5) return;
-    const maxStart = Math.max(0, this.availableDays.length - 5);
-    const targetStart = Math.min(maxStart, Math.max(0, (this.dailyWindowStart || 0) + step));
-    if (targetStart === this.dailyWindowStart) return;
-
-    this.dailyWindowStart = targetStart;
-    const visibleDays = this.availableDays.slice(this.dailyWindowStart, this.dailyWindowStart + 5);
-    if (!visibleDays.includes(this.selectedDayDate)) {
-      this.selectedDayDate = step > 0 ? visibleDays[0] : visibleDays[visibleDays.length - 1];
-    }
-    this.setMasterTimeMode("daily");
+    this.stepDay(step > 0 ? 1 : -1);
   }
 
   renderDailyHourlyChart(dayData) {
@@ -1905,7 +1951,7 @@ class BitChordPulseApp {
     const artistEl = document.getElementById("ms-summary-artist");
 
     if (hoursEl) hoursEl.textContent = `${kpis.totalHoursFormatted} hrs`;
-    if (splitEl) splitEl.textContent = `${kpis.hours}h daily / ${kpis.totalPlays} plays`;
+    if (splitEl) splitEl.textContent = `${kpis.dailyAverageHours}h/day • ${kpis.totalPlays} plays`;
     if (songEl) songEl.textContent = songs.topSongs[0]?.title || "—";
     if (artistEl) artistEl.textContent = artists.podium[0]?.name || "—";
   }
@@ -2076,10 +2122,14 @@ class BitChordPulseApp {
 
   renderMonthCalendarCoverView(filteredMonth) {
     const container = document.getElementById("cal-month-days-grid");
+    const galleryContainer = document.getElementById("cal-month-anthem-gallery");
+    const subviewToggle = document.getElementById("cal-subview-toggle");
+    const weekdayHeader = document.getElementById("cal-weekday-header-row");
     if (!container) return;
 
     if (!this.availableMonths || this.availableMonths.length === 0) {
       container.innerHTML = `<div style="padding:24px; color:var(--text-tertiary); text-align:center; grid-column:1/-1;">No monthly records found</div>`;
+      if (galleryContainer) galleryContainer.innerHTML = `<div style="padding:24px; color:var(--text-tertiary); text-align:center;">No monthly records found</div>`;
       return;
     }
 
@@ -2104,10 +2154,13 @@ class BitChordPulseApp {
     const totalDaysInMonth = lastDay.getDate();
     const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Mon=0, Sun=6
 
-    let html = "";
+    let gridHtml = "";
     for (let i = 0; i < startDayOfWeek; i++) {
-      html += `<div class="month-cover-cell empty-day"></div>`;
+      gridHtml += `<div class="month-cover-cell empty-day"></div>`;
     }
+
+    let galleryHtml = "";
+    const activeDaysData = [];
 
     for (let day = 1; day <= totalDaysInMonth; day++) {
       const dateStr = `${yearStr}-${mStr.padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -2123,7 +2176,9 @@ class BitChordPulseApp {
         const topTitle = topTrack && topTrack.title ? ` • #1: ${topTrack.title}` : "";
         const artUrl = topTrack ? artEngine.getTrackArtworkUrl(topTrack, this.masterState.artMap) : "";
 
-        html += `
+        activeDaysData.push({ dateStr, day, dayData, topTrack, mins, artUrl });
+
+        gridHtml += `
           <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: ${mins}m (${dayData.plays || 0} plays)${topTitle}">
             ${artUrl ? `<img class="month-cell-bg-art" src="${artUrl}" alt="" />` : `<div class="month-cell-bg-art" style="background:rgba(250,36,60,0.18);"></div>`}
             <span class="month-cell-day-num">${day}</span>
@@ -2131,7 +2186,7 @@ class BitChordPulseApp {
           </div>
         `;
       } else {
-        html += `
+        gridHtml += `
           <div class="month-cover-cell ${isSelected}" data-date="${dateStr}" title="${dateStr}: 0 mins">
             <span class="month-cell-day-num" style="background:transparent; color:rgba(255,255,255,0.4);">${day}</span>
           </div>
@@ -2139,19 +2194,78 @@ class BitChordPulseApp {
       }
     }
 
-    container.innerHTML = html;
+    // Sort active days descending (newest first) for the Daily Anthem Gallery
+    activeDaysData.sort((a, b) => b.day - a.day);
+    if (activeDaysData.length > 0) {
+      activeDaysData.forEach(item => {
+        const isSelected = item.dateStr === this.selectedDayDate ? "selected" : "";
+        const dateObj = new Date(year, month, item.day);
+        const dateFormatted = dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        const fallbackArt = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200";
+
+        galleryHtml += `
+          <div class="anthem-day-card ${isSelected}" data-date="${item.dateStr}">
+            <img class="anthem-day-art" src="${item.artUrl || fallbackArt}" alt="" />
+            <div class="anthem-day-info">
+              <span class="anthem-day-date-tag">${dateFormatted}</span>
+              <div class="anthem-day-title">${item.topTrack ? item.topTrack.title : "Playback Session"}</div>
+              <div class="anthem-day-artist">${item.topTrack ? item.topTrack.artist : "Multiple Artists"}</div>
+              <div class="anthem-day-stats">${item.mins} mins tracked • ${item.dayData.plays || 1} plays</div>
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      galleryHtml = `<div style="text-align:center; padding:24px; color:var(--text-tertiary); grid-column:1/-1;">No listening sessions recorded for this month.</div>`;
+    }
+
+    container.innerHTML = gridHtml;
+    if (galleryContainer) galleryContainer.innerHTML = galleryHtml;
+
+    // Subview mode switcher (Calendar Grid vs Anthem Gallery)
+    if (subviewToggle && !this._calSubviewBound) {
+      this._calSubviewBound = true;
+      subviewToggle.querySelectorAll(".view-toggle-btn").forEach(btn => {
+        btn.onclick = () => {
+          subviewToggle.querySelectorAll(".view-toggle-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          const mode = btn.getAttribute("data-cal-subview");
+          if (mode === "gallery") {
+            container.classList.add("hidden");
+            if (weekdayHeader) weekdayHeader.classList.add("hidden");
+            if (galleryContainer) galleryContainer.classList.remove("hidden");
+          } else {
+            container.classList.remove("hidden");
+            if (weekdayHeader) weekdayHeader.classList.remove("hidden");
+            if (galleryContainer) galleryContainer.classList.add("hidden");
+          }
+        };
+      });
+    }
+
+    // Attach click events to both grid cells and gallery cards
+    const handleDayClick = (dateStr) => {
+      document.querySelectorAll(".month-cover-cell, .anthem-day-card").forEach(c => {
+        c.classList.toggle("selected", c.getAttribute("data-date") === dateStr);
+      });
+      this.selectCalendarDay(dateStr);
+    };
 
     container.querySelectorAll(".month-cover-cell[data-date]").forEach(cell => {
-      cell.onclick = () => {
-        container.querySelectorAll(".month-cover-cell").forEach(c => c.classList.remove("selected"));
-        cell.classList.add("selected");
-        const dateStr = cell.getAttribute("data-date");
-        this.selectCalendarDay(dateStr);
-      };
+      cell.onclick = () => handleDayClick(cell.getAttribute("data-date"));
     });
+
+    if (galleryContainer) {
+      galleryContainer.querySelectorAll(".anthem-day-card[data-date]").forEach(card => {
+        card.onclick = () => handleDayClick(card.getAttribute("data-date"));
+      });
+    }
 
     if (this.selectedDayDate && this.selectedDayDate.startsWith(monthStr)) {
       this.selectCalendarDay(this.selectedDayDate);
+    } else if (activeDaysData.length > 0) {
+      // Default to latest active day in the month
+      this.selectCalendarDay(activeDaysData[0].dateStr);
     }
   }
 
@@ -2168,13 +2282,38 @@ class BitChordPulseApp {
     const listEl = document.getElementById("inspector-selected-tracks");
     const jumpBtn = document.getElementById("btn-jump-to-daily-mode");
 
+    const spotlightCard = document.getElementById("inspector-spotlight-card");
+    const spotlightArt = document.getElementById("inspector-spotlight-art");
+    const spotlightTitle = document.getElementById("inspector-spotlight-title");
+    const spotlightArtist = document.getElementById("inspector-spotlight-artist");
+    const spotlightStats = document.getElementById("inspector-spotlight-stats");
+
     if (!dateStr) return;
+
+    // Highlight selected elements across views
+    document.querySelectorAll(".month-cover-cell, .anthem-day-card").forEach(el => {
+      el.classList.toggle("selected", el.getAttribute("data-date") === dateStr);
+    });
 
     const dayData = PulseAnalytics.computeDayBreakdown(this.masterState, dateStr);
     if (!dayData) return;
 
     if (dateTitle) dateTitle.textContent = this.formatDateLong(dateStr);
     if (statsEl) statsEl.textContent = `${dayData.formattedTime} • ${dayData.totalPlays} plays`;
+
+    // Render Hero Spotlight Card with large artwork
+    if (spotlightCard && dayData.tracks && dayData.tracks.length > 0) {
+      const topSong = dayData.tracks[0];
+      const art = artEngine.getTrackArtworkUrl(topSong, this.masterState.artMap);
+      if (spotlightArt) spotlightArt.src = art || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200";
+      if (spotlightTitle) spotlightTitle.textContent = topSong.title;
+      if (spotlightArtist) spotlightArtist.textContent = topSong.artist;
+      if (spotlightStats) spotlightStats.textContent = `${topSong.totalMinutes} mins tracked • ${topSong.plays || 1} plays on this day`;
+      spotlightCard.classList.remove("hidden");
+      spotlightCard.onclick = () => this.openSongDeepDive(topSong);
+    } else if (spotlightCard) {
+      spotlightCard.classList.add("hidden");
+    }
 
     // Render mini hourly curve in inspector
     this.renderInspectorMiniHourly(dayData);
@@ -2450,8 +2589,44 @@ class BitChordPulseApp {
   async renderTabArtists(filtered) {
     const data = PulseAnalytics.computeArtistLeaderboard(filtered, "primary");
 
-    // 1. Interactive Artist Gravity Constellation Canvas (Collaborations & Sonic Worlds)
-    this.renderArtistConstellation(data.leaderboard, filtered);
+    // 1. Interactive Artist Gravity Constellation vs Mobile Collaborations Switcher
+    const constToggle = document.getElementById("constellation-view-toggle");
+    const canvasWrap = document.getElementById("constellation-canvas-wrap");
+    const collabsView = document.getElementById("constellation-collabs-view");
+
+    // Automatically default to clean Collaborations list on mobile devices (< 768px)
+    if (this._userConstellationMode === undefined) {
+      this._userConstellationMode = (window.innerWidth < 768) ? "collabs" : "canvas";
+    }
+
+    const applyConstellationMode = (mode) => {
+      this._userConstellationMode = mode;
+      if (constToggle) {
+        constToggle.querySelectorAll(".view-toggle-btn").forEach(btn => {
+          btn.classList.toggle("active", btn.getAttribute("data-constellation-view") === mode);
+        });
+      }
+      if (mode === "collabs") {
+        if (canvasWrap) canvasWrap.classList.add("hidden");
+        if (collabsView) collabsView.classList.remove("hidden");
+      } else {
+        if (canvasWrap) canvasWrap.classList.remove("hidden");
+        if (collabsView) collabsView.classList.add("hidden");
+        this.renderArtistConstellation(data.leaderboard, filtered);
+      }
+    };
+
+    if (constToggle && !this._constToggleBound) {
+      this._constToggleBound = true;
+      constToggle.querySelectorAll(".view-toggle-btn").forEach(btn => {
+        btn.onclick = () => {
+          applyConstellationMode(btn.getAttribute("data-constellation-view"));
+        };
+      });
+    }
+
+    applyConstellationMode(this._userConstellationMode);
+    this.renderConstellationCollabsView(data.leaderboard, filtered);
 
     // 2. Top 3 Podium Cards
     const podiumEl = document.getElementById("artists-podium-cards");
@@ -2513,6 +2688,191 @@ class BitChordPulseApp {
     }
   }
 
+  renderConstellationCollabsView(artistsList, filteredState) {
+    const container = document.getElementById("constellation-collabs-view");
+    if (!container) return;
+
+    const topArtists = (artistsList || []).slice(0, 12);
+    if (topArtists.length === 0) {
+      container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-tertiary);">No artists found</div>`;
+      return;
+    }
+
+    const allTracks = (filteredState && filteredState.tracks && filteredState.tracks.length > 0)
+      ? filteredState.tracks
+      : (this.masterState?.tracks || []);
+
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const trackMatchesArtist = (t, artistName) => {
+      const norm = artistName.toLowerCase().trim();
+      if (t.artists && t.artists.some(a => a.toLowerCase().trim() === norm)) return true;
+      if (t.primaryArtist && t.primaryArtist.toLowerCase().trim() === norm) return true;
+      if (norm === "a.r. rahman") {
+        if (t.artists && t.artists.some(a => a.toLowerCase().includes("rahman"))) return true;
+        if (t.artist && t.artist.toLowerCase().includes("rahman")) return true;
+      }
+      const regex = new RegExp("(^|[^a-zA-Z0-9])" + escapeRegex(artistName) + "($|[^a-zA-Z0-9])", "i");
+      return regex.test(t.artist || "") || regex.test(t.title || "");
+    };
+
+    // Find all collaborations
+    const collabs = [];
+    for (let i = 0; i < topArtists.length; i++) {
+      for (let j = i + 1; j < topArtists.length; j++) {
+        const artistA = topArtists[i];
+        const artistB = topArtists[j];
+        const shared = [];
+        allTracks.forEach(t => {
+          if (trackMatchesArtist(t, artistA.name) && trackMatchesArtist(t, artistB.name)) {
+            shared.push(t.title);
+          }
+        });
+        if (shared.length > 0) {
+          const unique = Array.from(new Set(shared));
+          collabs.push({
+            artistA,
+            artistB,
+            count: unique.length,
+            tracks: unique
+          });
+        }
+      }
+    }
+    collabs.sort((a, b) => b.count - a.count);
+
+    // Group top artists by cultural world
+    const worldsMap = new Map();
+    topArtists.forEach(a => {
+      const w = PulseAnalytics.classifyCulturalWorld({ artist: a.name, title: "" });
+      const wName = w?.name || "Other Worlds";
+      if (!worldsMap.has(wName)) {
+        worldsMap.set(wName, { name: wName, color: w?.color || "#FA243C", artists: [] });
+      }
+      worldsMap.get(wName).artists.push(a);
+    });
+
+    let html = `
+      <div>
+        <div class="collabs-view-section-title">
+          <span>🤝 Direct Collaborations</span>
+          <span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">${collabs.length} connection${collabs.length > 1 ? "s" : ""}</span>
+        </div>
+        <div class="collabs-cards-grid">
+    `;
+
+    if (collabs.length === 0) {
+      html += `<div style="color:var(--text-tertiary); padding:16px;">No multi-artist collaborations recorded among top artists.</div>`;
+    } else {
+      collabs.forEach(c => {
+        const fallback = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=120";
+        const sampleTracks = c.tracks.slice(0, 3).map(t => `<span class="collab-track-chip" title="${t}">${t}</span>`).join("");
+        const moreCount = c.tracks.length - 3;
+        const moreStr = moreCount > 0 ? `<span class="collab-track-chip" style="color:var(--accent-rose); font-weight:600;">+${moreCount} more</span>` : "";
+
+        html += `
+          <div class="collab-pair-card">
+            <div class="collab-pair-header">
+              <div class="collab-artist-unit" data-artist-name="${encodeURIComponent(c.artistA.name)}">
+                <div class="collab-avatar-wrap">
+                  <img class="collab-avatar-img" data-artist-portrait="${encodeURIComponent(c.artistA.name)}" src="${fallback}" alt="${c.artistA.name}" />
+                  <span class="collab-avatar-rank">#${c.artistA.rank || 1}</span>
+                </div>
+                <div class="collab-artist-meta">
+                  <div class="collab-artist-name">${c.artistA.name}</div>
+                  <div class="collab-artist-sub">${c.artistA.hours}h • ${c.artistA.plays}p</div>
+                </div>
+              </div>
+
+              <div class="collab-connector-pill">
+                <span>⚡ ${c.count} track${c.count > 1 ? "s" : ""}</span>
+              </div>
+
+              <div class="collab-artist-unit" data-artist-name="${encodeURIComponent(c.artistB.name)}" style="justify-content: flex-end; text-align: right;">
+                <div class="collab-artist-meta">
+                  <div class="collab-artist-name">${c.artistB.name}</div>
+                  <div class="collab-artist-sub">${c.artistB.hours}h • ${c.artistB.plays}p</div>
+                </div>
+                <div class="collab-avatar-wrap">
+                  <img class="collab-avatar-img" data-artist-portrait="${encodeURIComponent(c.artistB.name)}" src="${fallback}" alt="${c.artistB.name}" />
+                  <span class="collab-avatar-rank">#${c.artistB.rank || 1}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="collab-tracks-preview">
+              ${sampleTracks}
+              ${moreStr}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    html += `
+        </div>
+      </div>
+
+      <div>
+        <div class="collabs-view-section-title">
+          <span>🌌 Sonic Galaxies (Shared Worlds)</span>
+          <span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">${worldsMap.size} worlds</span>
+        </div>
+        <div class="galaxy-clusters-grid">
+    `;
+
+    worldsMap.forEach(w => {
+      const chips = w.artists.map(a => `
+        <span class="galaxy-artist-chip" data-artist-name="${encodeURIComponent(a.name)}">
+          <span class="galaxy-chip-rank">#${a.rank || 1}</span>
+          <span class="galaxy-chip-name">${a.name}</span>
+          <span class="galaxy-chip-hrs">${a.hours}h</span>
+        </span>
+      `).join("");
+
+      html += `
+        <div class="galaxy-cluster-card">
+          <div class="galaxy-cluster-header">
+            <span class="galaxy-cluster-title" style="color:${w.color};">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${w.color};"></span>
+              ${w.name}
+            </span>
+            <span class="galaxy-cluster-count">${w.artists.length} artists</span>
+          </div>
+          <div class="galaxy-artists-flex">
+            ${chips}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+
+    // Load artist portraits asynchronously
+    topArtists.forEach(a => {
+      artEngine.getArtistPortrait(a.name, this.masterState?.searchHistory, this.masterState?.portraitMap, a.topTracks)
+        .then(url => {
+          if (!url) return;
+          container.querySelectorAll(`img[data-artist-portrait="${encodeURIComponent(a.name)}"]`).forEach(img => {
+            img.src = url;
+          });
+        });
+    });
+
+    // Wire up clicks to open artist drawers
+    container.querySelectorAll("[data-artist-name]").forEach(el => {
+      el.onclick = () => {
+        const name = decodeURIComponent(el.getAttribute("data-artist-name"));
+        const artist = topArtists.find(x => x.name === name);
+        if (artist) this.openArtistDrawer(artist);
+      };
+    });
+  }
+
   renderArtistConstellation(artistsList, filteredState) {
     const canvas = document.getElementById("artist-constellation-canvas");
     if (!canvas) return;
@@ -2540,7 +2900,8 @@ class BitChordPulseApp {
     const rect = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const width = rect.width > 0 ? rect.width : 900;
-    const height = rect.height > 0 ? rect.height : 540;
+    const isMobile = width < 600;
+    const height = isMobile ? 420 : (rect.height > 0 ? rect.height : 540);
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -2610,9 +2971,9 @@ class BitChordPulseApp {
     const centerY = height / 2;
 
     const worldAnchors = {
-      "Indian Melodies & Indie": { x: centerX + width * 0.08, y: centerY + height * 0.04, color: "#FA243C" },
-      "Western Indie & Pop": { x: centerX - width * 0.28, y: centerY - height * 0.12, color: "#FF8A9E" },
-      "J-Pop, Anime & Vocaloid": { x: centerX - width * 0.24, y: centerY + height * 0.26, color: "#FF5E7E" },
+      "Indian Melodies & Indie": { x: centerX + (isMobile ? width * 0.05 : width * 0.08), y: centerY + height * 0.04, color: "#FA243C" },
+      "Western Indie & Pop": { x: centerX - (isMobile ? width * 0.22 : width * 0.28), y: centerY - (isMobile ? height * 0.16 : height * 0.12), color: "#FF8A9E" },
+      "J-Pop, Anime & Vocaloid": { x: centerX - (isMobile ? width * 0.20 : width * 0.24), y: centerY + (isMobile ? height * 0.22 : height * 0.26), color: "#FF5E7E" },
       default: { x: centerX, y: centerY, color: "#FA243C" }
     };
 
@@ -2622,17 +2983,17 @@ class BitChordPulseApp {
       const worldColor = worldInfo?.color || "#FA243C";
       const anchor = worldAnchors[worldName] || worldAnchors.default;
 
-      // Visual Hierarchy sizing
-      let radius = 28;
-      if (i === 0) radius = 44; // #1 Top Artist
-      else if (i < 3) radius = 38; // #2, #3
-      else if (i < 7) radius = 33; // #4 - #7
+      // Adaptive Visual Hierarchy sizing for Mobile vs Desktop
+      let radius = isMobile ? 18 : 28;
+      if (i === 0) radius = isMobile ? 28 : 44; // #1 Top Artist
+      else if (i < 3) radius = isMobile ? 24 : 38; // #2, #3
+      else if (i < 7) radius = isMobile ? 21 : 33; // #4 - #7
 
       // Smooth initial celestial dispersal around galaxy anchor
       const angle = (i * 1.61803398875 * 2 * Math.PI) % (2 * Math.PI);
-      const distFromAnchor = 35 + (i * 18);
-      const x = Math.max(radius + 30, Math.min(width - radius - 30, anchor.x + Math.cos(angle) * distFromAnchor));
-      const y = Math.max(radius + 40, Math.min(height - radius - 45, anchor.y + Math.sin(angle) * distFromAnchor));
+      const distFromAnchor = (isMobile ? 20 : 35) + (i * (isMobile ? 12 : 18));
+      const x = Math.max(radius + 20, Math.min(width - radius - 20, anchor.x + Math.cos(angle) * distFromAnchor));
+      const y = Math.max(radius + 30, Math.min(height - radius - 35, anchor.y + Math.sin(angle) * distFromAnchor));
 
       const img = new Image();
       artEngine.getArtistPortrait(a.name, this.masterState.searchHistory, this.masterState.portraitMap, a.topTracks)
@@ -2648,8 +3009,8 @@ class BitChordPulseApp {
         anchorY: anchor.y,
         x,
         y,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
         radius,
         img
       };
@@ -2661,11 +3022,28 @@ class BitChordPulseApp {
       edge.nodeB = nodes[edge.j];
     });
 
-    // 4. Mouse Interactions & Dynamic Hover Banner
+    // 4. Mouse & Touch Interactions with Intelligent Settle/Wakeup (0% CPU when idle)
     let hoveredNode = null;
     let hoveredEdge = null;
     let draggedNode = null;
     let dragOffset = { x: 0, y: 0 };
+    let isRunning = false;
+    let frameCount = 0;
+    let animTime = 0;
+
+    const requestFrame = () => {
+      if (!isRunning && this.currentTab === "artists") {
+        isRunning = true;
+        this.constellationAnimId = requestAnimationFrame(animate);
+      }
+    };
+
+    // When artist portraits finish loading, trigger redraw
+    nodes.forEach(n => {
+      if (n.img) {
+        n.img.onload = () => requestFrame();
+      }
+    });
 
     const distToSegment = (px, py, x1, y1, x2, y2) => {
       const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
@@ -2714,8 +3092,12 @@ class BitChordPulseApp {
         draggedNode.y = my + dragOffset.y;
         draggedNode.vx = 0;
         draggedNode.vy = 0;
+        requestFrame();
         return;
       }
+
+      const prevHoveredNode = hoveredNode;
+      const prevHoveredEdge = hoveredEdge;
 
       // 1. Check node hover
       hoveredNode = null;
@@ -2739,14 +3121,20 @@ class BitChordPulseApp {
       }
 
       canvas.style.cursor = (hoveredNode || hoveredEdge) ? "pointer" : "default";
-      updateHoverBanner();
+      if (prevHoveredNode !== hoveredNode || prevHoveredEdge !== hoveredEdge) {
+        updateHoverBanner();
+        requestFrame();
+      }
     };
 
     canvas.onmouseleave = () => {
-      hoveredNode = null;
-      hoveredEdge = null;
-      canvas.style.cursor = "default";
-      updateHoverBanner();
+      if (hoveredNode || hoveredEdge) {
+        hoveredNode = null;
+        hoveredEdge = null;
+        canvas.style.cursor = "default";
+        updateHoverBanner();
+        requestFrame();
+      }
     };
 
     canvas.onmousedown = e => {
@@ -2758,15 +3146,61 @@ class BitChordPulseApp {
           draggedNode = node;
           dragOffset.x = node.x - mx;
           dragOffset.y = node.y - my;
+          requestFrame();
           break;
         }
       }
     };
 
     const handleMouseUp = () => {
-      draggedNode = null;
+      if (draggedNode) {
+        draggedNode = null;
+        frameCount = 0;
+        requestFrame();
+      }
     };
     window.addEventListener("mouseup", handleMouseUp);
+
+    canvas.ontouchstart = e => {
+      if (!e.touches || e.touches.length === 0) return;
+      const touch = e.touches[0];
+      const crect = canvas.getBoundingClientRect();
+      const mx = touch.clientX - crect.left;
+      const my = touch.clientY - crect.top;
+      for (const node of nodes) {
+        if (Math.hypot(node.x - mx, node.y - my) <= node.radius + 14) {
+          draggedNode = node;
+          dragOffset.x = node.x - mx;
+          dragOffset.y = node.y - my;
+          hoveredNode = node;
+          updateHoverBanner();
+          requestFrame();
+          e.preventDefault();
+          break;
+        }
+      }
+    };
+
+    canvas.ontouchmove = e => {
+      if (draggedNode && e.touches && e.touches.length > 0) {
+        const touch = e.touches[0];
+        const crect = canvas.getBoundingClientRect();
+        draggedNode.x = touch.clientX - crect.left + dragOffset.x;
+        draggedNode.y = touch.clientY - crect.top + dragOffset.y;
+        draggedNode.vx = 0;
+        draggedNode.vy = 0;
+        requestFrame();
+        e.preventDefault();
+      }
+    };
+
+    canvas.ontouchend = () => {
+      if (draggedNode) {
+        draggedNode = null;
+        frameCount = 0;
+        requestFrame();
+      }
+    };
 
     canvas.onclick = () => {
       if (hoveredNode && !draggedNode) {
@@ -2791,53 +3225,59 @@ class BitChordPulseApp {
       }
     };
 
-    let animTime = 0;
-
     const animate = () => {
       if (this.currentTab !== "artists") {
         this.constellationAnimId = null;
+        isRunning = false;
         return;
       }
+      frameCount++;
       animTime += 0.016;
       ctx.clearRect(0, 0, width, height);
 
-      // --- 1. Physics Engine ---
-      // A. Collaborative Spring Attraction
-      collaborationEdges.forEach(edge => {
-        const a = edge.nodeA;
-        const b = edge.nodeB;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const targetDist = 165 - Math.min(35, edge.count * 1.5);
-        const springForce = (dist - targetDist) * 0.00045 * Math.min(2.5, 1 + edge.count * 0.08);
+      let totalSpeed = 0;
 
-        if (a !== draggedNode) {
-          a.vx += (dx / dist) * springForce;
-          a.vy += (dy / dist) * springForce;
-        }
-        if (b !== draggedNode) {
-          b.vx -= (dx / dist) * springForce;
-          b.vy -= (dy / dist) * springForce;
-        }
-      });
+      // --- 1. Physics Engine (runs during settling or while dragging) ---
+      const shouldRunPhysics = draggedNode || frameCount < 160;
+      if (shouldRunPhysics) {
+        // A. Collaborative Spring Attraction
+        collaborationEdges.forEach(edge => {
+          const a = edge.nodeA;
+          const b = edge.nodeB;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const targetDist = 165 - Math.min(35, edge.count * 1.5);
+          const springForce = (dist - targetDist) * 0.00045 * Math.min(2.5, 1 + edge.count * 0.08);
 
-      // B. Galactic Cluster Anchor Attraction (world gravitational center)
-      nodes.forEach(node => {
-        if (node !== draggedNode) {
-          const toAnchorX = node.anchorX - node.x;
-          const toAnchorY = node.anchorY - node.y;
-          node.vx += toAnchorX * 0.00035;
-          node.vy += toAnchorY * 0.00035;
+          if (a !== draggedNode) {
+            a.vx += (dx / dist) * springForce;
+            a.vy += (dy / dist) * springForce;
+          }
+          if (b !== draggedNode) {
+            b.vx -= (dx / dist) * springForce;
+            b.vy -= (dy / dist) * springForce;
+          }
+        });
 
-          // Gentle ambient celestial float
-          node.vx += Math.cos(animTime * 0.8 + node.nodeIndex) * 0.03;
-          node.vy += Math.sin(animTime * 0.8 + node.nodeIndex) * 0.03;
-        }
-      });
+        // B. Galactic Cluster Anchor Attraction (world gravitational center)
+        nodes.forEach(node => {
+          if (node !== draggedNode) {
+            const toAnchorX = node.anchorX - node.x;
+            const toAnchorY = node.anchorY - node.y;
+            node.vx += toAnchorX * 0.00035;
+            node.vy += toAnchorY * 0.00035;
 
-      // C. Multi-pass Hard Collision Repulsion (strictly prevents label & portrait overlapping)
-      for (let iter = 0; iter < 4; iter++) {
+            // Gentle ambient celestial float only during first 80 frames
+            if (frameCount < 80) {
+              node.vx += Math.cos(animTime * 0.8 + node.nodeIndex) * 0.02;
+              node.vy += Math.sin(animTime * 0.8 + node.nodeIndex) * 0.02;
+            }
+          }
+        });
+
+        // C. Multi-pass Hard Collision Repulsion (strictly prevents label & portrait overlapping)
+        for (let iter = 0; iter < 4; iter++) {
         for (let i = 0; i < nodes.length; i++) {
           for (let j = i + 1; j < nodes.length; j++) {
             const a = nodes[i];
@@ -2845,7 +3285,7 @@ class BitChordPulseApp {
             const dx = b.x - a.x;
             const dy = b.y - a.y;
             const dist = Math.hypot(dx, dy) || 0.001;
-            const minDist = a.radius + b.radius + 44; // Generous buffer for labels, badges and shadows
+            const minDist = a.radius + b.radius + (isMobile ? 22 : 44); // Adaptive clearance buffer
 
             if (dist < minDist) {
               const overlap = minDist - dist;
@@ -2872,19 +3312,22 @@ class BitChordPulseApp {
       // D. Velocity integration, damping & boundary enforcement
       nodes.forEach(node => {
         if (node !== draggedNode) {
-          node.vx *= 0.88;
-          node.vy *= 0.88;
+          node.vx *= 0.86;
+          node.vy *= 0.86;
           node.x += node.vx;
           node.y += node.vy;
 
-          const padX = node.radius + 28;
-          const padY = node.radius + 45;
+          totalSpeed += Math.hypot(node.vx, node.vy);
+
+          const padX = node.radius + (isMobile ? 16 : 28);
+          const padY = node.radius + (isMobile ? 26 : 45);
           if (node.x < padX) { node.x = padX; node.vx = Math.abs(node.vx) * 0.5; }
           if (node.x > width - padX) { node.x = width - padX; node.vx = -Math.abs(node.vx) * 0.5; }
           if (node.y < padY) { node.y = padY; node.vy = Math.abs(node.vy) * 0.5; }
           if (node.y > height - padY) { node.y = height - padY; node.vy = -Math.abs(node.vy) * 0.5; }
         }
       });
+    }
 
       // --- 2. Render Layer 1: Ethereal Galaxy Filaments (Shared Sonic Worlds) ---
       for (let i = 0; i < nodes.length; i++) {
@@ -2946,8 +3389,10 @@ class BitChordPulseApp {
         // Midpoint Collaboration Badge (Badge pill showing song count)
         const midX = (a.x + b.x) / 2;
         const midY = (a.y + b.y) / 2;
+        const edgeLength = Math.hypot(a.x - b.x, a.y - b.y);
+        const showEdgeBadge = isHovered || (!isMobile && edge.count >= 4 && edgeLength > 75);
 
-        if (isHovered || edge.count >= 3) {
+        if (showEdgeBadge) {
           ctx.save();
           const badgeText = `${edge.count} track${edge.count > 1 ? "s" : ""}`;
           ctx.font = "bold 9px Inter, -apple-system, sans-serif";
@@ -3060,24 +3505,33 @@ class BitChordPulseApp {
         ctx.shadowBlur = 6;
 
         let dispName = node.name;
-        if (dispName.length > 15) dispName = dispName.slice(0, 14) + "…";
+        const maxLen = isMobile ? 12 : 15;
+        if (dispName.length > maxLen) dispName = dispName.slice(0, maxLen - 1) + "…";
 
-        ctx.font = isHovered ? "bold 12px Inter, -apple-system, sans-serif" : "600 11px Inter, -apple-system, sans-serif";
+        ctx.font = isHovered ? "bold 12px Inter, -apple-system, sans-serif" : (isMobile ? "600 9px Inter, -apple-system, sans-serif" : "600 11px Inter, -apple-system, sans-serif");
         ctx.fillStyle = isHovered ? "#FFFFFF" : (isConnected ? "#FFFFFF" : "rgba(255, 255, 255, 0.92)");
-        ctx.fillText(dispName, node.x, node.y + r + 15);
+        ctx.fillText(dispName, node.x, node.y + r + (isMobile ? 11 : 15));
 
-        ctx.font = "500 9.5px Inter, -apple-system, sans-serif";
+        ctx.font = isMobile ? "500 8.5px Inter, -apple-system, sans-serif" : "500 9.5px Inter, -apple-system, sans-serif";
         ctx.fillStyle = isHovered ? "#FF6B81" : (isConnected ? "#FF6B81" : "rgba(255, 255, 255, 0.65)");
-        ctx.fillText(`${node.hours}h • ${node.plays} plays`, node.x, node.y + r + 28);
+        ctx.fillText(`${node.hours}h • ${node.plays} plays`, node.x, node.y + r + (isMobile ? 22 : 28));
         ctx.restore();
 
         ctx.restore(); // restores globalAlpha
       });
 
+      // Settle detection: if nodes reached equilibrium and not dragging, sleep animation to save 100% CPU
+      if (!draggedNode && frameCount >= 140 && totalSpeed < 0.05) {
+        isRunning = false;
+        this.constellationAnimId = null;
+        return;
+      }
+
       this.constellationAnimId = requestAnimationFrame(animate);
     };
 
-    animate();
+    isRunning = true;
+    this.constellationAnimId = requestAnimationFrame(animate);
   }
 
   async openArtistDrawer(artistObj) {
@@ -4172,12 +4626,15 @@ class BitChordPulseApp {
     const headerTitle = document.getElementById("header-tab-title");
     const titleMap = {
       "listen-now": "Listen Now",
-      "time-rhythm": "Time & Rhythm",
+      "time-rhythm": "Rhythm",
       "artists": "Artists",
-      "songs-albums": "Songs & Albums",
-      "dna-rig": "DNA & Audio Rig"
+      "songs-albums": "Songs",
+      "dna-rig": "Audio DNA"
     };
     if (headerTitle) headerTitle.textContent = titleMap[targetTab] || "Observatory";
+
+    // Synchronize global subnav strips across tabs
+    this.updateGlobalSubnavStrips();
 
     if (this.masterState) {
       const filtered = PulseAnalytics.filterState(this.masterState, this.currentTimeframe, false);
@@ -4185,10 +4642,7 @@ class BitChordPulseApp {
       if (targetTab === "time-rhythm") this.renderTabTimeRhythm();
       if (targetTab === "artists") this.renderTabArtists(filtered);
       if (targetTab === "songs-albums") this.renderTabSongsAlbums(filtered);
-      if (targetTab === "dna-rig") {
-        this.renderSonicWorldsChart(PulseAnalytics.computeCulturalWorldsAndGraph(filtered));
-        this.renderAudiophileEqChart();
-      }
+      if (targetTab === "dna-rig") this.renderTabDnaRig(filtered);
     }
   }
 

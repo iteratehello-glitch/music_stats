@@ -68,7 +68,7 @@
 
           <button class="nav-tab-btn" data-tab="time-rhythm">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span>Time & Rhythm</span>
+            <span>Rhythm</span>
           </button>
 
           <button class="nav-tab-btn" data-tab="artists">
@@ -78,12 +78,12 @@
 
           <button class="nav-tab-btn" data-tab="songs-albums">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-            <span>Songs & Albums</span>
+            <span>Songs</span>
           </button>
 
           <button class="nav-tab-btn" data-tab="dna-rig">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-            <span>DNA & Audio Rig</span>
+            <span>Audio DNA</span>
           </button>
         </nav>
       </div>
@@ -128,7 +128,7 @@
 
       <button class="mobile-tab-btn" data-tab="songs-albums">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-        <span>Library</span>
+        <span>Songs</span>
       </button>
 
       <button class="mobile-tab-btn" data-tab="dna-rig">
@@ -214,18 +214,18 @@
 
             <!-- Weekly Subnav (5-Week Rolling Window) -->
             <div class="subnav-time-bar hidden" id="subnav-weekly-bar">
-              <button class="stepper-nav-btn" id="btn-global-week-prev" title="Roll to Previous Weeks">❮</button>
+              <button class="stepper-nav-btn" id="btn-global-week-prev" title="Previous Week">❮</button>
               <div class="weekly-5pack-strip" id="global-weekly-pills-strip"></div>
-              <button class="stepper-nav-btn" id="btn-global-week-next" title="Roll to Next Weeks">❯</button>
-              <div class="daily-page-indicator" id="global-week-page-indicator">1 of 3</div>
+              <button class="stepper-nav-btn" id="btn-global-week-next" title="Next Week">❯</button>
+              <div class="daily-page-indicator" id="global-week-page-indicator">1 of 4</div>
             </div>
 
             <!-- Daily Subnav (5-Date Rolling Window) -->
             <div class="subnav-time-bar hidden" id="subnav-daily-bar">
-              <button class="stepper-nav-btn" id="btn-global-day-prev" title="Roll to Previous 5 Days">❮</button>
+              <button class="stepper-nav-btn" id="btn-global-day-prev" title="Previous Day">❮</button>
               <div class="daily-5pack-strip" id="global-daily-pills-strip"></div>
-              <button class="stepper-nav-btn" id="btn-global-day-next" title="Roll to Next 5 Days">❯</button>
-              <div class="daily-page-indicator" id="global-day-page-indicator">5 of 17</div>
+              <button class="stepper-nav-btn" id="btn-global-day-next" title="Next Day">❯</button>
+              <div class="daily-page-indicator" id="global-day-page-indicator">18 of 18</div>
             </div>
           </div>
         </div>
@@ -457,8 +457,8 @@
                 <span class="month-stat-val" id="ln-ms-summary-hours">0h</span>
               </div>
               <div class="month-stat-box">
-                <span class="month-stat-lbl">Daily vs Baseline</span>
-                <span class="month-stat-val" id="ln-ms-summary-split">0h / 0h</span>
+                <span class="month-stat-lbl">Active Days</span>
+                <span class="month-stat-val" id="ln-ms-summary-split">0 days</span>
               </div>
               <div class="month-stat-box">
                 <span class="month-stat-lbl">Daily Average</span>
@@ -772,7 +772,7 @@
               <span class="month-stat-val" id="ms-summary-hours">0h</span>
             </div>
             <div class="month-stat-box">
-              <span class="month-stat-lbl">Daily vs Baseline</span>
+              <span class="month-stat-lbl">Daily Average</span>
               <span class="month-stat-val" id="ms-summary-split">0h / 0h</span>
             </div>
             <div class="month-stat-box">
@@ -825,14 +825,34 @@
 
             <!-- View 2: Month Calendar (Cover Art View) -->
             <div class="month-calendar-cover-view hidden" id="month-calendar-cover-view">
-              <div class="cal-weekday-header-row">
+              <div class="cal-subview-bar">
+                <div class="view-mode-pill-toggle" id="cal-subview-toggle">
+                  <button class="view-toggle-btn active" data-cal-subview="grid">📅 Calendar Grid</button>
+                  <button class="view-toggle-btn" data-cal-subview="gallery">🖼️ Daily Anthem Gallery</button>
+                </div>
+                <span class="cal-subview-hint">Tap any day to inspect full discography</span>
+              </div>
+              <div class="cal-weekday-header-row" id="cal-weekday-header-row">
                 <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
               </div>
               <div class="cal-month-days-grid" id="cal-month-days-grid"></div>
+              <!-- Daily Anthem Gallery (Large Image Cards) -->
+              <div class="cal-month-anthem-gallery hidden" id="cal-month-anthem-gallery"></div>
             </div>
 
             <!-- Rich Day Inspector Dashboard -->
             <div class="day-inspector-section" id="day-inspector-section">
+              <!-- Hero Day Anthem Spotlight Card -->
+              <div class="inspector-spotlight-card hidden" id="inspector-spotlight-card">
+                <img class="inspector-spotlight-art" id="inspector-spotlight-art" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200" alt="" />
+                <div class="inspector-spotlight-info">
+                  <span class="inspector-spotlight-tag">#1 Anthem on this Day</span>
+                  <div class="inspector-spotlight-title" id="inspector-spotlight-title">No Track Selected</div>
+                  <div class="inspector-spotlight-artist" id="inspector-spotlight-artist">—</div>
+                  <div class="inspector-spotlight-stats" id="inspector-spotlight-stats">0m • 0 plays</div>
+                </div>
+              </div>
+
               <div class="inspector-header-row">
                 <div>
                   <div class="inspector-date-str" id="inspector-selected-date">Select a day in the matrix above</div>
@@ -865,35 +885,43 @@
              TAB 3: Artists (Podium, Constellation Canvas & Strict Capped Gallery)
              ========================================================================== -->
         <section class="app-tab-panel" id="tab-artists">
-          <!-- Artist Gravity Constellation Bubble Canvas -->
+          <!-- Artist Gravity Constellation Bubble Canvas & Mobile Collaborations List -->
           <div class="glass-container">
             <div class="section-card-header constellation-header-flex">
               <div>
                 <h3 class="section-card-title">Artist Gravity Constellation</h3>
-                <span class="section-card-sub">Cosmic collaboration & sonic world network of your top artists • Sized by listening time</span>
+                <span class="section-card-sub">Cosmic collaboration &amp; sonic world network of your top artists • Sized by listening time</span>
               </div>
-              <div class="constellation-legend" id="constellation-legend">
-                <span class="constellation-legend-item">
-                  <span class="constellation-legend-line solid-crimson"></span>
-                  Direct Collaboration (Shared Tracks)
-                </span>
-                <span class="constellation-legend-item">
-                  <span class="constellation-legend-line dashed-filament"></span>
-                  Sonic Galaxy (Shared Genre)
-                </span>
-                <span class="constellation-legend-item">
-                  <span class="constellation-legend-dot"></span>
-                  Orbital Mass = Listening Time
-                </span>
+              <div class="constellation-header-controls">
+                <div class="view-mode-pill-toggle" id="constellation-view-toggle">
+                  <button class="view-toggle-btn active" data-constellation-view="canvas">🌌 Orbit System</button>
+                  <button class="view-toggle-btn" data-constellation-view="collabs">🤝 Top Collaborations</button>
+                </div>
+                <div class="constellation-legend" id="constellation-legend">
+                  <span class="constellation-legend-item">
+                    <span class="constellation-legend-line solid-crimson"></span>
+                    Collaboration
+                  </span>
+                  <span class="constellation-legend-item">
+                    <span class="constellation-legend-line dashed-filament"></span>
+                    Sonic Galaxy
+                  </span>
+                  <span class="constellation-legend-item">
+                    <span class="constellation-legend-dot"></span>
+                    Listening Time
+                  </span>
+                </div>
               </div>
             </div>
-            <div class="artist-constellation-wrap">
+            <div class="artist-constellation-wrap" id="constellation-canvas-wrap">
               <canvas id="artist-constellation-canvas" style="width:100%; height:100%; display:block;"></canvas>
               <div class="constellation-hover-banner" id="constellation-hover-banner">
                 <span class="constellation-banner-icon">✨</span>
                 <span class="constellation-banner-text" id="constellation-banner-text">Hover an artist or connection line to reveal musical collaborations &amp; shared tracks</span>
               </div>
             </div>
+            <!-- Mobile-Friendly Collaborations List View -->
+            <div class="constellation-collabs-view hidden" id="constellation-collabs-view"></div>
           </div>
 
           <!-- Top 3 Podium Cards -->
@@ -1295,7 +1323,7 @@
   </div>
 
   <!-- Main ES Module Script Entrypoint -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=20261105d"></script>
 
 </body>
 </html>

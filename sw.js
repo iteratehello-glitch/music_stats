@@ -2,7 +2,7 @@
  * MuStats - Offline PWA Service Worker
  */
 
-const CACHE_NAME = "mustats-v1";
+const CACHE_NAME = "mustats-v3";
 const ASSETS_TO_CACHE = [
   "./",
   "./index.html",

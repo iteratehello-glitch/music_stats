@@ -67,9 +67,13 @@ const CULTURAL_RULES = {
 
 export class PulseAnalytics {
   static _filterCache = new Map();
+  static _dayBreakdownCache = new Map();
+  static _weekBreakdownCache = new Map();
 
   static clearFilterCache() {
     this._filterCache.clear();
+    this._dayBreakdownCache.clear();
+    this._weekBreakdownCache.clear();
   }
 
   /**
@@ -138,11 +142,16 @@ export class PulseAnalytics {
     let allowedMonths = null;
     let allowedDateFilter = null;
 
-    if (/^\d{4}$/.test(filter)) {
-      // Dynamic 4-digit Year Filter (e.g. "2026", "2025")
-      const yearPrefix = filter;
-      rawMonthly = rawMonthly.filter(m => m && m.month && m.month.startsWith(yearPrefix));
-      allowedDateFilter = d => typeof d === "string" && d.startsWith(yearPrefix);
+    if (/^\d{4}$/.test(filter) || (typeof filter === "string" && filter.startsWith("year:"))) {
+      // Dynamic 4-digit Year Filter (e.g. "2026", "2025", "year:2026")
+      const yearPrefix = filter.replace(/^year:/, "");
+      const allMonths = Array.from(new Set(rawMonthly.map(m => m && m.month).filter(Boolean)));
+      const matchingMonths = allMonths.filter(m => m.startsWith(yearPrefix));
+      if (matchingMonths.length > 0) {
+        allowedMonths = matchingMonths;
+      } else {
+        allowedDateFilter = d => typeof d === "string" && d.startsWith(yearPrefix);
+      }
     } else if (filter === "thisMonth") {
       // Find latest month
       const months = Array.from(new Set(rawMonthly.map(m => m.month))).sort();
@@ -209,10 +218,16 @@ export class PulseAnalytics {
     // If specific date filter applied
     if (allowedDateFilter) {
       const isSingleDayFilter = typeof filter === "string" && /^\d{4}-\d{2}-\d{2}$/.test(filter);
+      const isWeekFilter = typeof filter === "string" && filter.startsWith("week:");
       const dayBreakdown = isSingleDayFilter ? this.computeDayBreakdown(masterState, filter) : null;
+      const weekBreakdown = isWeekFilter ? this.computeWeekBreakdown(masterState, filter) : null;
       const dayTrackMap = new Map();
       if (dayBreakdown && dayBreakdown.tracks && dayBreakdown.tracks.length > 0) {
         dayBreakdown.tracks.forEach(t => dayTrackMap.set(t.id, t));
+      }
+      const weekTrackMap = new Map();
+      if (weekBreakdown && weekBreakdown.weekTracks && weekBreakdown.weekTracks.length > 0) {
+        weekBreakdown.weekTracks.forEach(t => weekTrackMap.set(t.id, t));
       }
 
       rawTracks = rawTracks
@@ -224,6 +239,16 @@ export class PulseAnalytics {
               ms: dt.dayMs || dt.ms,
               plays: dt.dayPlays || dt.plays,
               days: { [filter]: { ms: dt.dayMs || dt.ms, plays: dt.dayPlays || dt.plays } }
+            };
+          }
+
+          if (isWeekFilter && weekTrackMap.has(t.id)) {
+            const wt = weekTrackMap.get(t.id);
+            return {
+              ...t,
+              ms: wt.weekMs || wt.ms,
+              plays: wt.weekPlays || wt.plays,
+              days: wt.days || t.days || {}
             };
           }
 
@@ -249,6 +274,21 @@ export class PulseAnalytics {
           };
         })
         .filter(t => t.ms > 0 || t.plays > 0);
+
+      if (isWeekFilter && weekTrackMap.size > 0) {
+        const existingIds = new Set(rawTracks.map(t => t.id));
+        weekTrackMap.forEach((wt, id) => {
+          if (!existingIds.has(id)) {
+            rawTracks.push({
+              ...wt,
+              ms: wt.weekMs || wt.ms,
+              plays: wt.weekPlays || wt.plays,
+              days: wt.days || {}
+            });
+            existingIds.add(id);
+          }
+        });
+      }
     }
 
     // Handle "Merge Identical Songs Across Albums" toggle
@@ -972,6 +1012,12 @@ export class PulseAnalytics {
 
     if (!startDate || !endDate) return null;
 
+    const wm = masterState.watermark || masterState.lastSyncedWatermark || "base";
+    const cacheKey = `${wm}_${cleanKey}`;
+    if (this._weekBreakdownCache.has(cacheKey)) {
+      return this._weekBreakdownCache.get(cacheKey);
+    }
+
     // Generate 7 days (Monday to Sunday)
     const days = [];
     const cur = new Date(startDate + "T12:00:00Z");
@@ -982,100 +1028,50 @@ export class PulseAnalytics {
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
-    const daysLookup = new Map(days.map(d => [d.date, d]));
     let totalMs = 0;
     let totalPlays = 0;
     const trackMap = new Map();
     const artistMap = new Map();
     const albumMap = new Map();
 
-    // 1. Process from master tracks
-    masterState.tracks.forEach(track => {
-      if (!track.days) return;
-      let tMs = 0;
-      let tPlays = 0;
-      for (const [date, dVal] of Object.entries(track.days)) {
-        if (daysLookup.has(date)) {
-          const ms = dVal.ms || 0;
-          const plays = dVal.plays || 0;
-          tMs += ms;
-          tPlays += plays;
-          const dayItem = daysLookup.get(date);
-          dayItem.ms += ms;
-          dayItem.plays += plays;
-        }
-      }
-      if (tMs > 0 || tPlays > 0) {
-        totalMs += tMs;
-        totalPlays += tPlays;
-        const key = track.id || track.title;
-        if (!trackMap.has(key)) {
-          trackMap.set(key, { ...track, weekMs: 0, weekPlays: 0 });
-        }
-        const tr = trackMap.get(key);
-        tr.weekMs += tMs;
-        tr.weekPlays += tPlays;
+    // Iterate through all 7 days of the week, leveraging computeDayBreakdown
+    // which handles direct track.days, last-played timestamps, and authoritative dayLedger
+    for (const dayItem of days) {
+      const dayData = this.computeDayBreakdown(masterState, dayItem.date);
+      if (dayData && dayData.totalMs > 0) {
+        dayItem.ms = dayData.totalMs;
+        dayItem.plays = dayData.totalPlays;
+        dayItem.hours = parseFloat((dayData.totalMs / 3600000).toFixed(2));
+        totalMs += dayData.totalMs;
+        totalPlays += dayData.totalPlays;
 
-        const artist = track.primaryArtist || track.artist || "Unknown Artist";
-        if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, ms: 0, plays: 0, tracks: [] });
-        const a = artistMap.get(artist);
-        a.ms += tMs;
-        a.plays += tPlays;
-        a.tracks.push(track);
-
-        const album = track.album || "Unknown Album";
-        if (!albumMap.has(album)) albumMap.set(album, { name: album, artist, coverArt: track.coverArt, ms: 0, plays: 0 });
-        const alb = albumMap.get(album);
-        alb.ms += tMs;
-        alb.plays += tPlays;
-      }
-    });
-
-    // 2. Fallback: If track.days was empty, fall back to monthly[].days and monthly[].trackDays
-    if (trackMap.size === 0 && masterState.monthly && Array.isArray(masterState.monthly)) {
-      masterState.monthly.forEach(m => {
-        if (m.days) {
-          for (const [date, dVal] of Object.entries(m.days)) {
-            if (daysLookup.has(date)) {
-              const dayItem = daysLookup.get(date);
-              dayItem.ms = Math.max(dayItem.ms, dVal.ms || 0);
-              dayItem.plays = Math.max(dayItem.plays, dVal.plays || 0);
-            }
+        dayData.tracks.forEach(t => {
+          const key = t.id || t.title;
+          if (!trackMap.has(key)) {
+            trackMap.set(key, { ...t, weekMs: 0, weekPlays: 0, days: {} });
           }
-        }
-        if (m.trackDays) {
-          for (const [key, dVal] of Object.entries(m.trackDays)) {
-            const [date, trackId] = key.split("_");
-            if (daysLookup.has(date)) {
-              const ms = dVal.ms || 0;
-              const plays = dVal.plays || 0;
-              const t = (m.tracks || []).find(x => x.id == trackId) || { id: trackId, title: "Track " + trackId, artist: "Unknown Artist" };
-              const tKey = t.id || t.title;
-              if (!trackMap.has(tKey)) {
-                trackMap.set(tKey, { ...t, weekMs: 0, weekPlays: 0 });
-              }
-              const tr = trackMap.get(tKey);
-              tr.weekMs += ms;
-              tr.weekPlays += plays;
+          const tr = trackMap.get(key);
+          const tMs = t.dayMs || t.ms || 0;
+          const tPlays = t.dayPlays || t.plays || 0;
+          tr.weekMs += tMs;
+          tr.weekPlays += tPlays;
+          if (!tr.days) tr.days = {};
+          tr.days[dayItem.date] = { ms: tMs, plays: tPlays };
 
-              const artist = t.primaryArtist || t.artist || "Unknown Artist";
-              if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, ms: 0, plays: 0, tracks: [] });
-              const a = artistMap.get(artist);
-              a.ms += ms;
-              a.plays += plays;
+          const artist = t.primaryArtist || t.artist || "Unknown Artist";
+          if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, ms: 0, plays: 0, tracks: [] });
+          const a = artistMap.get(artist);
+          a.ms += tMs;
+          a.plays += tPlays;
+          a.tracks.push(t);
 
-              const album = t.album || "Unknown Album";
-              if (!albumMap.has(album)) albumMap.set(album, { name: album, artist, coverArt: t.coverArt, ms: 0, plays: 0 });
-              const alb = albumMap.get(album);
-              alb.ms += ms;
-              alb.plays += plays;
-            }
-          }
-        }
-      });
-
-      totalMs = Array.from(daysLookup.values()).reduce((acc, d) => acc + d.ms, 0);
-      totalPlays = Array.from(daysLookup.values()).reduce((acc, d) => acc + d.plays, 0);
+          const album = t.album || "Unknown Album";
+          if (!albumMap.has(album)) albumMap.set(album, { name: album, artist, coverArt: t.art, ms: 0, plays: 0 });
+          const alb = albumMap.get(album);
+          alb.ms += tMs;
+          alb.plays += tPlays;
+        });
+      }
     }
 
     days.forEach(d => {
@@ -1101,7 +1097,7 @@ export class PulseAnalytics {
       minutes: Math.round(alb.ms / 60000)
     }));
 
-    return {
+    const result = {
       weekKey: `week:${startDate}:${endDate}`,
       startDate,
       endDate,
@@ -1117,6 +1113,8 @@ export class PulseAnalytics {
       topArtists,
       topAlbums
     };
+    this._weekBreakdownCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -1125,6 +1123,12 @@ export class PulseAnalytics {
   static computeDayBreakdown(masterState, dateStr) {
     if (!masterState || !masterState.tracks || !dateStr) {
       return null;
+    }
+
+    const wm = masterState.watermark || masterState.lastSyncedWatermark || "base";
+    const cacheKey = `${wm}_${dateStr}`;
+    if (this._dayBreakdownCache.has(cacheKey)) {
+      return this._dayBreakdownCache.get(cacheKey);
     }
 
     const dayTracks = [];
@@ -1350,7 +1354,7 @@ export class PulseAnalytics {
       projectedHourlyHours[h] = parseFloat(((totalMs * weight) / 3600000).toFixed(2));
     }
 
-    return {
+    const result = {
       dateStr,
       totalMs,
       totalPlays,
@@ -1367,6 +1371,8 @@ export class PulseAnalytics {
       exactHourlyPlays,
       projectedHourlyHours
     };
+    this._dayBreakdownCache.set(cacheKey, result);
+    return result;
   }
 
   /**
